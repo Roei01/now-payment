@@ -33,7 +33,7 @@ export class GreenInvoiceService {
       "/documents",
       {
         type: 320,
-        lang: "en",
+        lang: "he",
         currency: "ILS",
         remarks: payment.description,
         client: {
@@ -43,8 +43,8 @@ export class GreenInvoiceService {
         },
         sendEmail: true,
         emailContent: {
-          subject: `Invoice receipt for ${payment.description}`,
-          body: `Thanks for paying ${payment.amountILS} ILS with crypto.`,
+          subject: `חשבונית עבור ${payment.description}`,
+          body: `תודה על התשלום בסך ${payment.amountILS} ש"ח.`,
         },
         income: [
           {
@@ -67,7 +67,7 @@ export class GreenInvoiceService {
     const invoiceId = response.data.id ?? response.data.documentId;
 
     if (!invoiceId) {
-      throw new HttpError(502, "GreenInvoice did not return an invoice identifier.");
+      throw new HttpError(502, "GreenInvoice לא החזיר מזהה חשבונית.");
     }
 
     return String(invoiceId);
@@ -90,7 +90,7 @@ export class GreenInvoiceService {
     const token = response.data.token ?? response.data.jwt;
 
     if (!token) {
-      throw new HttpError(502, "GreenInvoice authentication did not return a token.");
+      throw new HttpError(502, "אימות מול GreenInvoice נכשל ולא הוחזר טוקן.");
     }
 
     this.tokenCache = {

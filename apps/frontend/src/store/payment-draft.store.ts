@@ -14,7 +14,7 @@ const initialDraft: CreatePaymentInput = {
   amountILS: 180,
   cryptoCurrency: "USDT",
   network: "TRC20",
-  description: "Table 12",
+  description: "שולחן 12",
   customer: {
     fullName: "",
     email: "",

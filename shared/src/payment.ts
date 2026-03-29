@@ -4,18 +4,38 @@ export const cryptoCurrencySchema = z.enum(["BTC", "ETH", "USDT"]);
 export const networkSchema = z.enum(["BTC", "ETH", "ERC20", "TRC20"]);
 
 export const customerSchema = z.object({
-  fullName: z.string().trim().min(2).max(80),
-  email: z.email(),
-  phone: z.string().trim().min(7).max(20),
+  fullName: z
+    .string()
+    .trim()
+    .min(2, "יש להזין שם מלא תקין.")
+    .max(80, "השם המלא ארוך מדי."),
+  email: z.string().trim().email("יש להזין כתובת אימייל תקינה."),
+  phone: z
+    .string()
+    .trim()
+    .min(7, "יש להזין מספר טלפון תקין.")
+    .max(20, "מספר הטלפון ארוך מדי."),
 });
 
 export const createPaymentInputSchema = z
   .object({
-    businessId: z.string().trim().min(2).max(50).default("default"),
-    amountILS: z.coerce.number().positive().max(100000),
+    businessId: z
+      .string()
+      .trim()
+      .min(2, "יש להזין מזהה עסק תקין.")
+      .max(50, "מזהה העסק ארוך מדי.")
+      .default("default"),
+    amountILS: z.coerce
+      .number()
+      .positive("הסכום חייב להיות גדול מ-0.")
+      .max(100000, "הסכום חורג מהמגבלה המותרת."),
     cryptoCurrency: cryptoCurrencySchema,
     network: networkSchema,
-    description: z.string().trim().min(2).max(120),
+    description: z
+      .string()
+      .trim()
+      .min(2, "יש להזין תיאור או מספר שולחן.")
+      .max(120, "התיאור ארוך מדי."),
     customer: customerSchema,
   })
   .superRefine((value, ctx) => {
@@ -29,7 +49,7 @@ export const createPaymentInputSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["network"],
-        message: "Selected network is not available for this currency.",
+        message: "הרשת שנבחרה אינה תואמת למטבע שבחרת.",
       });
     }
   });

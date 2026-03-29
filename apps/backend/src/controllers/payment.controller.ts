@@ -18,7 +18,7 @@ export class PaymentController {
     const paymentId = request.params.paymentId;
 
     if (!paymentId || Array.isArray(paymentId)) {
-      throw new HttpError(400, "Payment ID is required.");
+      throw new HttpError(400, "חסר מזהה תשלום.");
     }
 
     const payment = await this.paymentOrchestrator.getPaymentStatus(paymentId);

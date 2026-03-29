@@ -1,17 +1,41 @@
 import crypto from "node:crypto";
 
-import type { CreatePaymentInput, PaymentWebhookPayload } from "@now-payment/shared";
+import type { CreatePaymentInput, CryptoCurrency, PaymentNetwork, PaymentWebhookPayload } from "@now-payment/shared";
 import axios, { AxiosInstance } from "axios";
 
 import { env } from "../config/env.js";
 import { HttpError } from "../lib/http-error.js";
+import { logger } from "../lib/logger.js";
 
-const payCurrencyMap: Record<string, string> = {
-  "BTC:BTC": "btc",
-  "ETH:ETH": "eth",
-  "ETH:ERC20": "eth",
-  "USDT:ERC20": "usdterc20",
-  "USDT:TRC20": "usdttrc20",
+const defaultUsdtPayCurrency = "usdttrc20";
+
+const payCurrencyConfig: Record<
+  CryptoCurrency,
+  {
+    defaultNetwork: PaymentNetwork;
+    networks: Partial<Record<PaymentNetwork, string>>;
+  }
+> = {
+  BTC: {
+    defaultNetwork: "BTC",
+    networks: {
+      BTC: "btc",
+    },
+  },
+  ETH: {
+    defaultNetwork: "ETH",
+    networks: {
+      ETH: "eth",
+      ERC20: "eth",
+    },
+  },
+  USDT: {
+    defaultNetwork: "TRC20",
+    networks: {
+      ERC20: defaultUsdtPayCurrency,
+      TRC20: defaultUsdtPayCurrency,
+    },
+  },
 };
 
 type CreatedNowPayment = {
@@ -37,27 +61,14 @@ export class NowPaymentsService {
   }
 
   async createPayment(input: CreatePaymentInput, localPaymentId: string): Promise<CreatedNowPayment> {
+    if (input.amountILS <= 0) {
+      throw new HttpError(400, "הסכום חייב להיות גדול מ-0.");
+    }
+
     const payCurrency = this.resolvePayCurrency(input.cryptoCurrency, input.network);
-
-    const estimateResponse = await this.client.get<{
-      estimated_amount: number;
-    }>("/estimate", {
-      params: {
-        amount: input.amountILS,
-        currency_from: "ils",
-        currency_to: payCurrency,
-      },
-    });
-
-    const createResponse = await this.client.post<{
-      payment_id: number | string;
-      pay_address: string;
-      pay_amount: number;
-      pay_currency: string;
-      payment_status: string;
-    }>("/payment", {
+    const payload = {
       price_amount: input.amountILS,
-      price_currency: "ils",
+      price_currency: "ils" as const,
       pay_currency: payCurrency,
       order_id: localPaymentId,
       order_description: input.description,
@@ -65,21 +76,50 @@ export class NowPaymentsService {
       customer_email: input.customer.email,
       customer_phone: input.customer.phone,
       customer_name: input.customer.fullName,
-      pay_amount: estimateResponse.data.estimated_amount,
-    });
-
-    return {
-      paymentId: String(createResponse.data.payment_id),
-      payAddress: createResponse.data.pay_address,
-      payAmount: Number(createResponse.data.pay_amount),
-      payCurrency: createResponse.data.pay_currency,
-      status: createResponse.data.payment_status,
     };
+
+    if (env.NODE_ENV !== "production") {
+      logger.debug({ payload }, "Creating payment with NOWPayments");
+    }
+
+    try {
+      const createResponse = await this.client.post<{
+        payment_id: number | string;
+        pay_address: string;
+        pay_amount: number;
+        pay_currency: string;
+        payment_status: string;
+      }>("/payment", payload);
+
+      return {
+        paymentId: String(createResponse.data.payment_id),
+        payAddress: createResponse.data.pay_address,
+        payAmount: Number(createResponse.data.pay_amount),
+        payCurrency: createResponse.data.pay_currency,
+        status: createResponse.data.payment_status,
+      };
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        logger.error(
+          {
+            status: error.response?.status,
+            data: error.response?.data,
+            payload,
+          },
+          "NOWPayments create payment failed",
+        );
+
+        throw new HttpError(error.response?.status === 400 ? 400 : 502, "לא הצלחנו ליצור תשלום.");
+      }
+
+      logger.error({ error, payload }, "Unexpected NOWPayments create payment error");
+      throw new HttpError(502, "לא הצלחנו ליצור תשלום.");
+    }
   }
 
   verifySignature(rawBody: string | undefined, payload: PaymentWebhookPayload, signature: string) {
     if (!rawBody) {
-      throw new HttpError(400, "Missing raw request body for webhook verification.");
+      throw new HttpError(400, "חסר גוף בקשה גולמי לצורך אימות הוובהוק.");
     }
 
     const sortedPayload = this.stableStringify(payload);
@@ -94,16 +134,22 @@ export class NowPaymentsService {
       .digest("hex");
 
     if (generated !== signature && rawBodySignature !== signature) {
-      throw new HttpError(401, "Invalid NOWPayments webhook signature.");
+      throw new HttpError(401, "חתימת הוובהוק של NOWPayments אינה תקינה.");
     }
   }
 
-  private resolvePayCurrency(currency: CreatePaymentInput["cryptoCurrency"], network: string) {
-    const key = `${currency}:${network}`;
-    const payCurrency = payCurrencyMap[key];
+  private resolvePayCurrency(currency: CreatePaymentInput["cryptoCurrency"], network?: PaymentNetwork) {
+    const currencyConfig = payCurrencyConfig[currency];
+
+    if (!currencyConfig) {
+      throw new HttpError(400, "מטבע הקריפטו שנבחר אינו נתמך.");
+    }
+
+    const resolvedNetwork = network ?? currencyConfig.defaultNetwork;
+    const payCurrency = currencyConfig.networks[resolvedNetwork];
 
     if (!payCurrency) {
-      throw new HttpError(400, "Unsupported crypto and network combination.");
+      throw new HttpError(400, "השילוב בין המטבע לרשת אינו נתמך.");
     }
 
     return payCurrency;

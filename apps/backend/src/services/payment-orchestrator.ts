@@ -64,7 +64,7 @@ export class PaymentOrchestrator {
     const payment = await this.repository.getById(paymentId);
 
     if (!payment) {
-      throw new HttpError(404, "Payment not found.");
+      throw new HttpError(404, "התשלום לא נמצא.");
     }
 
     if (payment.nowPaymentStatus === "finished" && payment.completionState !== "completed") {
@@ -78,7 +78,7 @@ export class PaymentOrchestrator {
 
   async handleWebhook(payload: unknown, signature: string | undefined, rawBody: string | undefined) {
     if (!signature) {
-      throw new HttpError(401, "Missing NOWPayments signature.");
+      throw new HttpError(401, "חסרה חתימת אימות של NOWPayments.");
     }
 
     const parsedPayload = paymentWebhookSchema.parse(payload);
@@ -89,7 +89,7 @@ export class PaymentOrchestrator {
       (await this.repository.getByNowPaymentId(parsedPayload.payment_id));
 
     if (!payment) {
-      throw new HttpError(404, "Unknown payment webhook.");
+      throw new HttpError(404, "התשלום של הוובהוק לא נמצא.");
     }
 
     const updatedPayment = await this.repository.update(payment.id, (existing) => ({
@@ -101,7 +101,7 @@ export class PaymentOrchestrator {
     }));
 
     if (!updatedPayment) {
-      throw new HttpError(404, "Payment disappeared during webhook processing.");
+      throw new HttpError(404, "התשלום לא נמצא במהלך עיבוד הוובהוק.");
     }
 
     if (updatedPayment.nowPaymentStatus === "finished") {
@@ -148,7 +148,7 @@ export class PaymentOrchestrator {
       await this.repository.update(processingPayment.id, (existing) => ({
         ...existing,
         completionState: "failed",
-        completionError: error instanceof Error ? error.message : "Unknown completion error.",
+        completionError: error instanceof Error ? error.message : "אירעה שגיאה לא ידועה בהשלמת התשלום.",
         updatedAt: new Date().toISOString(),
       }));
 
