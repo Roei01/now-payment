@@ -10,6 +10,7 @@ import {
 
 import { HttpError } from "../lib/http-error.js";
 import { logger } from "../lib/logger.js";
+import { env } from "../config/env.js";
 import { PaymentRepository } from "../repositories/payment.repository.js";
 import { GoogleSheetsService } from "./google-sheets.service.js";
 import { GreenInvoiceService } from "./green-invoice.service.js";
@@ -27,6 +28,7 @@ export class PaymentOrchestrator {
     const localPaymentId = randomUUID();
     const nowPayment = await this.nowPaymentsService.createPayment(input, localPaymentId);
     const timestamp = new Date().toISOString();
+    const paymentUrl = `${env.BASE_URL}/payment/${localPaymentId}`;
 
     const payment: PaymentRecord = {
       id: localPaymentId,
@@ -41,8 +43,9 @@ export class PaymentOrchestrator {
       nowPayCurrency: nowPayment.payCurrency,
       payAmount: nowPayment.payAmount,
       payAddress: nowPayment.payAddress,
+      paymentUrl,
       qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(
-        nowPayment.payAddress,
+        paymentUrl,
       )}`,
       completionState: "pending",
       createdAt: timestamp,
@@ -55,6 +58,7 @@ export class PaymentOrchestrator {
       payment_id: payment.id,
       pay_address: payment.payAddress,
       pay_amount: payment.payAmount,
+      payment_url: payment.paymentUrl,
       qr_code_url: payment.qrCodeUrl,
       status: payment.nowPaymentStatus,
     });

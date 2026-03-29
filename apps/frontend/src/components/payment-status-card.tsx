@@ -1,6 +1,15 @@
 "use client";
 
-import { CheckCircle2, Clock3, Copy, LoaderCircle, QrCode, RefreshCw, Wallet } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  Copy,
+  ExternalLink,
+  LoaderCircle,
+  QrCode,
+  RefreshCw,
+  Wallet,
+} from "lucide-react";
 
 import { usePaymentStatus } from "../hooks/use-payment-status";
 import { formatIlsAmount, truncateMiddle } from "../lib/utils";
@@ -14,6 +23,14 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
     }
 
     await navigator.clipboard.writeText(paymentQuery.data.payAddress);
+  };
+
+  const copyPaymentLink = async () => {
+    if (!paymentQuery.data?.paymentUrl) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(paymentQuery.data.paymentUrl);
   };
 
   if (paymentQuery.isLoading) {
@@ -81,7 +98,8 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
           />
         </div>
         <p className="mt-4 text-center text-[13px] leading-5 text-slate-500">
-          הציגו ללקוח את הקוד לסריקה. לאחר התשלום הסטטוס יתעדכן אוטומטית.
+          סריקת ה-QR תפתח את עמוד התשלום ישירות. לאחר התשלום הסטטוס יתעדכן
+          אוטומטית.
         </p>
       </div>
 
@@ -117,6 +135,38 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
             helper={paymentQuery.data.cryptoCurrency}
           />
           <MetricCard label="שווי בשקלים" value={formatIlsAmount(paymentQuery.data.amountILS)} helper='ש"ח' />
+        </div>
+
+        <div className="rounded-[1.45rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <ExternalLink className="h-4 w-4 text-emerald-500" />
+            קישור לתשלום
+          </div>
+          <p
+            dir="ltr"
+            className="mt-3 break-all rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-[13px] leading-6 text-slate-900"
+          >
+            {paymentQuery.data.paymentUrl}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={paymentQuery.data.paymentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 items-center gap-2 rounded-2xl bg-emerald-500 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600"
+            >
+              <ExternalLink className="h-4 w-4" />
+              פתח קישור
+            </a>
+            <button
+              type="button"
+              onClick={copyPaymentLink}
+              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition hover:translate-y-[-1px]"
+            >
+              <Copy className="h-4 w-4" />
+              העתק קישור
+            </button>
+          </div>
         </div>
 
         <div className="rounded-[1.45rem] border border-slate-200 bg-slate-50 p-4">

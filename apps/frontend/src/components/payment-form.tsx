@@ -78,7 +78,6 @@ export function PaymentForm() {
             icon={<Landmark className="h-4 w-4" />}
             title="שלב 2"
             label="תשלום"
-            active
           />
           <StepItem
             icon={<MailCheck className="h-4 w-4" />}

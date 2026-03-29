@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { paymentRecordSchema, type PaymentRecord } from "@now-payment/shared";
 
+import { env } from "../config/env.js";
+
 export class PaymentRepository {
   private readonly records = new Map<string, PaymentRecord>();
   private writeQueue: Promise<void> = Promise.resolve();
@@ -22,7 +24,8 @@ export class PaymentRepository {
       const parsed = JSON.parse(content) as unknown[];
 
       for (const item of parsed) {
-        const record = paymentRecordSchema.parse(item);
+        const normalizedItem = this.normalizeLegacyRecord(item);
+        const record = paymentRecordSchema.parse(normalizedItem);
         this.records.set(record.id, record);
       }
     } catch (error) {
@@ -70,5 +73,26 @@ export class PaymentRepository {
     });
 
     return this.writeQueue;
+  }
+
+  private normalizeLegacyRecord(item: unknown) {
+    if (!item || typeof item !== "object") {
+      return item;
+    }
+
+    const draft = { ...(item as Record<string, unknown>) };
+    const recordId = typeof draft.id === "string" ? draft.id : null;
+
+    if (recordId && typeof draft.paymentUrl !== "string") {
+      draft.paymentUrl = `${env.BASE_URL}/payment/${recordId}`;
+    }
+
+    if (recordId && typeof draft.qrCodeUrl !== "string") {
+      draft.qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(
+        `${env.BASE_URL}/payment/${recordId}`,
+      )}`;
+    }
+
+    return draft;
   }
 }
