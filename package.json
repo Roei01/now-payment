@@ -1,0 +1,23 @@
+{
+  "name": "now-payment",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm run dev -w @now-payment/backend & npm run dev -w @now-payment/frontend",
+    "build": "npm run build -ws",
+    "typecheck": "npm run typecheck -ws"
+  },
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend",
+    "shared"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^25.5.0",
+    "eslint": "^9.39.4",
+    "globals": "^17.4.0",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,10 @@
+.next
+dist
+coverage
+node_modules
+.env
+.env.local
+.DS_Store
+apps/backend/data/*.json
+!.env.example
+/node_modules
