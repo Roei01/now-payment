@@ -84,6 +84,7 @@ export const paymentRecordSchema = z.object({
   nowPayCurrency: z.string(),
   payAmount: z.number(),
   payAddress: z.string(),
+  paymentUrl: z.string().url(),
   qrCodeUrl: z.string().url(),
   invoiceId: z.string().optional(),
   sheetsSyncedAt: z.string().optional(),
@@ -98,6 +99,7 @@ export const createPaymentResponseSchema = z.object({
   payment_id: z.string(),
   pay_address: z.string(),
   pay_amount: z.number(),
+  payment_url: z.string().url(),
   qr_code_url: z.string().url(),
   status: paymentStatusSchema,
 });
@@ -111,6 +113,7 @@ export const paymentStatusResponseSchema = paymentRecordSchema.pick({
   customer: true,
   payAmount: true,
   payAddress: true,
+  paymentUrl: true,
   qrCodeUrl: true,
   nowPaymentStatus: true,
   completionState: true,
