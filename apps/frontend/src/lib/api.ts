@@ -9,7 +9,7 @@ import axios from "axios";
 
 const client = axios.create({
   baseURL: "/api/payment",
-  timeout: 15000,
+  timeout: 45000,
 });
 
 export async function createPayment(payload: CreatePaymentInput) {
