@@ -13,6 +13,14 @@ import { HttpError } from "../lib/http-error.js";
 import { logger } from "../lib/logger.js";
 
 const fallbackPayCurrencies = ["usdttrc20", "btc"] as const;
+const usdExchangeRateCacheTtlMs = 10 * 60 * 1000;
+
+type UsdExchangeRate = {
+  rate: number;
+  fetchedAt: string;
+};
+
+let usdExchangeRateCache: (UsdExchangeRate & { expiresAt: number }) | null = null;
 
 const payCurrencyConfig: Record<
   CryptoCurrency,
@@ -41,11 +49,21 @@ const payCurrencyConfig: Record<
       TRC20: "usdttrc20",
     },
   },
+  USDC: {
+    defaultNetwork: "ERC20",
+    networks: {
+      ERC20: "usdc",
+    },
+  },
 };
 
 type CreatedNowPayment = {
   invoiceId: string;
   paymentId?: string;
+  purchaseId?: string;
+  amountUSD: number;
+  usdExchangeRate: number;
+  usdExchangeRateFetchedAt: string;
   payAddress?: string;
   payAmount?: number;
   payCurrency?: string;
@@ -55,7 +73,7 @@ type CreatedNowPayment = {
 
 type NowPaymentsCreateRequest = {
   price_amount: number;
-  price_currency: "ils";
+  price_currency: "usd";
   pay_currency: string;
   order_id: string;
   order_description: string;
@@ -66,11 +84,22 @@ type NowPaymentsCreateRequest = {
 
 type NowPaymentsCreateResponse = {
   id?: number | string;
-  payment_id?: number | string;
-  pay_address?: string;
-  pay_amount?: number;
-  pay_currency?: string;
   invoice_url?: string;
+};
+
+type NowPaymentsInvoicePaymentRequest = {
+  iid: string;
+  pay_currency: string;
+  order_description: string;
+  customer_email: string;
+};
+
+type NowPaymentsInvoicePaymentResponse = {
+  payment_id?: number | string;
+  purchase_id?: number | string;
+  pay_address?: string;
+  pay_amount?: number | string;
+  pay_currency?: string;
   payment_status?: string;
 };
 
@@ -97,9 +126,15 @@ export class NowPaymentsService {
     }
 
     const payloadCandidates = this.buildPayloadCandidates(input, localPaymentId);
+    const usdExchangeRate = await this.getUsdExchangeRate();
+    const amountUSD = this.roundMoney(input.amountILS * usdExchangeRate.rate);
     let lastAxiosError: unknown = null;
 
-    for (const [index, payload] of payloadCandidates.entries()) {
+    for (const [index, payloadCandidate] of payloadCandidates.entries()) {
+      const payload = {
+        ...payloadCandidate,
+        price_amount: amountUSD,
+      };
 
       logger.info({ payload }, "Creating NOWPayments invoice");
 
@@ -118,26 +153,50 @@ export class NowPaymentsService {
           );
         }
 
-        const createdPayment: CreatedNowPayment = {
-          invoiceId: String(responseData.id),
-          payCurrency: responseData.pay_currency ?? payload.pay_currency,
+        const invoiceId = String(responseData.id);
+        const invoicePaymentResponse =
+          await this.client.post<NowPaymentsInvoicePaymentResponse>(
+            "/invoice-payment",
+            {
+              iid: invoiceId,
+              pay_currency: payload.pay_currency,
+              order_description: payload.order_description,
+              customer_email: input.customer.email,
+            } satisfies NowPaymentsInvoicePaymentRequest,
+          );
+        const invoicePaymentData = invoicePaymentResponse.data;
+        const payAmount =
+          invoicePaymentData.pay_amount !== undefined
+            ? Number(invoicePaymentData.pay_amount)
+            : Number.NaN;
+
+        if (
+          !invoicePaymentData.payment_id ||
+          !invoicePaymentData.pay_address ||
+          !Number.isFinite(payAmount)
+        ) {
+          throw new HttpError(
+            502,
+            "NOWPayments לא החזיר את פרטי התשלום הפנימיים הנדרשים.",
+            invoicePaymentData,
+          );
+        }
+
+        return {
+          invoiceId,
+          paymentId: String(invoicePaymentData.payment_id),
+          ...(invoicePaymentData.purchase_id
+            ? { purchaseId: String(invoicePaymentData.purchase_id) }
+            : {}),
+          amountUSD,
+          usdExchangeRate: usdExchangeRate.rate,
+          usdExchangeRateFetchedAt: usdExchangeRate.fetchedAt,
+          payAddress: invoicePaymentData.pay_address,
+          payAmount,
+          payCurrency: invoicePaymentData.pay_currency ?? payload.pay_currency,
           paymentUrl: responseData.invoice_url,
-          status: responseData.payment_status ?? "waiting",
+          status: invoicePaymentData.payment_status ?? "waiting",
         };
-
-        if (responseData.payment_id) {
-          createdPayment.paymentId = String(responseData.payment_id);
-        }
-
-        if (responseData.pay_address) {
-          createdPayment.payAddress = responseData.pay_address;
-        }
-
-        if (typeof responseData.pay_amount === "number") {
-          createdPayment.payAmount = responseData.pay_amount;
-        }
-
-        return createdPayment;
       } catch (error) {
         if (axios.isAxiosError(error)) {
           lastAxiosError = error;
@@ -255,8 +314,8 @@ export class NowPaymentsService {
     );
 
     return uniquePayCurrencies.map((payCurrency) => ({
-      price_amount: input.amountILS,
-      price_currency: "ils",
+      price_amount: 0,
+      price_currency: "usd",
       pay_currency: payCurrency,
       order_id: localPaymentId,
       order_description: input.description,
@@ -264,6 +323,49 @@ export class NowPaymentsService {
       success_url: `${env.BASE_URL}/payment/${localPaymentId}`,
       cancel_url: `${env.BASE_URL}/payment/${localPaymentId}`,
     }));
+  }
+
+  private async getUsdExchangeRate(): Promise<UsdExchangeRate> {
+    if (usdExchangeRateCache && usdExchangeRateCache.expiresAt > Date.now()) {
+      return usdExchangeRateCache;
+    }
+
+    try {
+      const response = await axios.get<{ rates?: { USD?: number } }>(
+        "https://api.frankfurter.app/latest",
+        {
+          params: {
+            from: "ILS",
+            to: "USD",
+          },
+          timeout: 8000,
+        },
+      );
+      const rate = response.data.rates?.USD;
+
+      if (!rate || !Number.isFinite(rate) || rate <= 0) {
+        throw new Error("Invalid USD exchange rate response");
+      }
+
+      const fetchedAt = new Date().toISOString();
+      usdExchangeRateCache = {
+        rate,
+        fetchedAt,
+        expiresAt: Date.now() + usdExchangeRateCacheTtlMs,
+      };
+
+      return usdExchangeRateCache;
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch ILS to USD exchange rate");
+      throw new HttpError(
+        502,
+        "לא הצלחנו לקבל שער דולר עדכני לצורך יצירת התשלום.",
+      );
+    }
+  }
+
+  private roundMoney(value: number) {
+    return Math.round(value * 100) / 100;
   }
 
   private shouldRetryWithFallback(error: unknown) {

@@ -28,24 +28,29 @@ export class PaymentOrchestrator {
     const nowPayment = await this.nowPaymentsService.createPayment(input, localPaymentId);
     const timestamp = new Date().toISOString();
     const paymentUrl = nowPayment.paymentUrl;
+    const qrCodePayload = nowPayment.payAddress ?? paymentUrl;
 
     const payment: PaymentRecord = {
       id: localPaymentId,
       businessId: input.businessId,
       amountILS: input.amountILS,
+      amountUSD: nowPayment.amountUSD,
+      usdExchangeRate: nowPayment.usdExchangeRate,
+      usdExchangeRateFetchedAt: nowPayment.usdExchangeRateFetchedAt,
       cryptoCurrency: input.cryptoCurrency,
       network: input.network,
       description: input.description,
       customer: input.customer,
       nowInvoiceId: nowPayment.invoiceId,
       ...(nowPayment.paymentId ? { nowPaymentId: nowPayment.paymentId } : {}),
+      ...(nowPayment.purchaseId ? { nowPurchaseId: nowPayment.purchaseId } : {}),
       nowPaymentStatus: this.normalizeStatus(nowPayment.status),
       ...(nowPayment.payCurrency ? { nowPayCurrency: nowPayment.payCurrency } : {}),
       ...(nowPayment.payAmount ? { payAmount: nowPayment.payAmount } : {}),
       ...(nowPayment.payAddress ? { payAddress: nowPayment.payAddress } : {}),
       paymentUrl,
       qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(
-        paymentUrl,
+        qrCodePayload,
       )}`,
       completionState: "pending",
       createdAt: timestamp,
@@ -61,6 +66,7 @@ export class PaymentOrchestrator {
       status: payment.nowPaymentStatus,
       ...(payment.payAddress ? { pay_address: payment.payAddress } : {}),
       ...(payment.payAmount !== undefined ? { pay_amount: payment.payAmount } : {}),
+      ...(payment.nowPayCurrency ? { pay_currency: payment.nowPayCurrency } : {}),
     });
   }
 

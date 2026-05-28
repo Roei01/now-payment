@@ -3,6 +3,9 @@
 import {
   createPaymentInputSchema,
   networkOptionsByCurrency,
+  type CreatePaymentInput,
+  type CryptoCurrency,
+  type PaymentNetwork,
 } from "@now-payment/shared";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -16,7 +19,7 @@ import {
   Truck,
   UserRound,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
@@ -26,9 +29,13 @@ import { formatIlsAmount } from "../lib/utils";
 import { usePaymentDraftStore } from "../store/payment-draft.store";
 
 type PaymentFormValues = z.input<typeof createPaymentInputSchema>;
+type PaymentPrefill = Partial<Omit<CreatePaymentInput, "customer">> & {
+  customer?: Partial<CreatePaymentInput["customer"]>;
+};
 
 export function PaymentForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { draft, setDraft } = usePaymentDraftStore();
   const createPaymentMutation = useCreatePayment();
 
@@ -44,15 +51,62 @@ export function PaymentForm() {
   });
 
   const selectedCurrency = watch("cryptoCurrency");
+  const selectedNetwork = watch("network");
   const networkOptions = networkOptionsByCurrency[selectedCurrency];
 
   useEffect(() => {
     const nextNetwork = networkOptions[0];
 
-    if (nextNetwork) {
+    if (nextNetwork && !networkOptions.includes(selectedNetwork)) {
       setValue("network", nextNetwork);
     }
-  }, [networkOptions, setValue]);
+  }, [networkOptions, selectedNetwork, setValue]);
+
+  useEffect(() => {
+    const prefill = getPaymentPrefill(searchParams);
+
+    if (!prefill) {
+      return;
+    }
+
+    setDraft(prefill);
+
+    if (prefill.amountILS !== undefined) {
+      setValue("amountILS", prefill.amountILS);
+    }
+
+    if (prefill.businessId) {
+      setValue("businessId", prefill.businessId);
+    }
+
+    if (prefill.cryptoCurrency) {
+      const nextNetwork =
+        prefill.network ?? networkOptionsByCurrency[prefill.cryptoCurrency][0];
+
+      setValue("cryptoCurrency", prefill.cryptoCurrency);
+      if (nextNetwork) {
+        setValue("network", nextNetwork);
+      }
+    } else if (prefill.network) {
+      setValue("network", prefill.network);
+    }
+
+    if (prefill.description) {
+      setValue("description", prefill.description);
+    }
+
+    if (prefill.customer?.fullName) {
+      setValue("customer.fullName", prefill.customer.fullName);
+    }
+
+    if (prefill.customer?.phone) {
+      setValue("customer.phone", prefill.customer.phone);
+    }
+
+    if (prefill.customer?.email) {
+      setValue("customer.email", prefill.customer.email);
+    }
+  }, [searchParams, setDraft, setValue]);
 
   const onSubmit = handleSubmit(async (values) => {
     const payload = createPaymentInputSchema.parse(values);
@@ -122,6 +176,7 @@ export function PaymentForm() {
                     <option value="BTC">BTC</option>
                     <option value="ETH">ETH</option>
                     <option value="USDT">USDT</option>
+                    <option value="USDC">USDC</option>
                   </select>
                 </Field>
 
@@ -137,13 +192,13 @@ export function PaymentForm() {
 
                 <div className="sm:col-span-2">
                   <Field
-                    label="תיאור / מספר שולחן"
+                    label="תיאור עסקה / מס׳ עסקה"
                     error={errors.description?.message}
                   >
                     <input
                       {...register("description")}
                       className={inputClassName}
-                      placeholder="שולחן 12"
+                      placeholder="מס׳ עסקה / הזמנה"
                     />
                   </Field>
                 </div>
@@ -225,7 +280,7 @@ export function PaymentForm() {
             <InfoCard
               icon={<ShieldCheck className="h-5 w-5 text-emerald-500" />}
               title="לאחר יצירת התשלום"
-              description="יוצג QR גדול לקישור התשלום הרשמי של NOWPayments וסטטוס חי עד לסיום."
+              description="יוצג QR פנימי לתשלום, קישור NOWPayments, וסטטוס חי עד לסיום."
             />
           </div>
 
@@ -258,6 +313,85 @@ export function PaymentForm() {
       </div>
     </form>
   );
+}
+
+function getPaymentPrefill(searchParams: URLSearchParams): PaymentPrefill | null {
+  const amountValue = pickQueryValue(searchParams, "amountILS", "amount", "sum");
+  const amountILS = amountValue ? Number(amountValue) : undefined;
+  const businessId = pickQueryValue(searchParams, "businessId", "business_id");
+  const description = pickQueryValue(
+    searchParams,
+    "description",
+    "transactionDescription",
+    "transaction_description",
+    "transactionId",
+    "transaction_id",
+    "orderId",
+    "order_id",
+  );
+  const fullName = pickQueryValue(
+    searchParams,
+    "fullName",
+    "full_name",
+    "customerName",
+    "customer_name",
+    "name",
+  );
+  const phone = pickQueryValue(searchParams, "phone", "customerPhone", "customer_phone");
+  const email = pickQueryValue(searchParams, "email", "customerEmail", "customer_email");
+  const cryptoCurrency = normalizeCurrency(
+    pickQueryValue(searchParams, "cryptoCurrency", "currency", "coin"),
+  );
+  const network = normalizeNetwork(pickQueryValue(searchParams, "network"));
+  const customer: Partial<CreatePaymentInput["customer"]> = {
+    ...(fullName ? { fullName } : {}),
+    ...(phone ? { phone } : {}),
+    ...(email ? { email } : {}),
+  };
+  const prefill: PaymentPrefill = {
+    ...(amountILS && Number.isFinite(amountILS) ? { amountILS } : {}),
+    ...(businessId ? { businessId } : {}),
+    ...(cryptoCurrency ? { cryptoCurrency } : {}),
+    ...(network ? { network } : {}),
+    ...(description ? { description } : {}),
+    ...(Object.keys(customer).length > 0 ? { customer } : {}),
+  };
+
+  return Object.keys(prefill).length > 0 ? prefill : null;
+}
+
+function pickQueryValue(searchParams: URLSearchParams, ...keys: string[]) {
+  for (const key of keys) {
+    const value = searchParams.get(key);
+
+    if (value?.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function normalizeCurrency(value: string | null): CryptoCurrency | undefined {
+  const normalized = value?.toUpperCase();
+
+  return normalized === "BTC" ||
+    normalized === "ETH" ||
+    normalized === "USDT" ||
+    normalized === "USDC"
+    ? normalized
+    : undefined;
+}
+
+function normalizeNetwork(value: string | null): PaymentNetwork | undefined {
+  const normalized = value?.toUpperCase();
+
+  return normalized === "BTC" ||
+    normalized === "ETH" ||
+    normalized === "ERC20" ||
+    normalized === "TRC20"
+    ? normalized
+    : undefined;
 }
 
 function Field({
