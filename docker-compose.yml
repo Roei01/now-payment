@@ -18,6 +18,8 @@ services:
       dockerfile: apps/frontend/Dockerfile
     env_file:
       - .env
+    environment:
+      BACKEND_URL: http://backend:4000
     depends_on:
       - backend
     ports:

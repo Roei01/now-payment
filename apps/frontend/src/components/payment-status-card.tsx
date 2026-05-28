@@ -98,8 +98,8 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
           />
         </div>
         <p className="mt-4 text-center text-[13px] leading-5 text-slate-500">
-          סריקת ה-QR תפתח את עמוד התשלום ישירות. לאחר התשלום הסטטוס יתעדכן
-          אוטומטית.
+          סריקת ה-QR תפתח את עמוד התשלום המאובטח של NOWPayments. לאחר התשלום
+          הסטטוס יתעדכן אוטומטית.
         </p>
       </div>
 
@@ -131,7 +131,11 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
         <div className="grid gap-3 md:grid-cols-2">
           <MetricCard
             label="סכום בקריפטו"
-            value={paymentQuery.data.payAmount.toString()}
+            value={
+              paymentQuery.data.payAmount !== undefined
+                ? paymentQuery.data.payAmount.toString()
+                : "מתעדכן בעמוד התשלום"
+            }
             helper={paymentQuery.data.cryptoCurrency}
           />
           <MetricCard label="שווי בשקלים" value={formatIlsAmount(paymentQuery.data.amountILS)} helper='ש"ח' />
@@ -140,7 +144,7 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
         <div className="rounded-[1.45rem] border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <ExternalLink className="h-4 w-4 text-emerald-500" />
-            קישור לתשלום
+            קישור תשלום של NOWPayments
           </div>
           <p
             dir="ltr"
@@ -179,17 +183,19 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
               dir="ltr"
               className="mt-3 break-all rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left font-mono text-[13px] leading-6 text-slate-900"
             >
-              {paymentQuery.data.payAddress}
+              {paymentQuery.data.payAddress ?? "תוצג לאחר פתיחת עמוד התשלום של NOWPayments"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={copyAddress}
-            className="mt-3 inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition hover:translate-y-[-1px]"
-          >
-            <Copy className="h-4 w-4" />
-            העתק כתובת
-          </button>
+          {paymentQuery.data.payAddress ? (
+            <button
+              type="button"
+              onClick={copyAddress}
+              className="mt-3 inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition hover:translate-y-[-1px]"
+            >
+              <Copy className="h-4 w-4" />
+              העתק כתובת
+            </button>
+          ) : null}
         </div>
 
         <div className="grid gap-3">

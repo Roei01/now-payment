@@ -5,18 +5,17 @@ import { AppProviders } from "../providers/app-providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "תשלומי קריפטו למסעדות",
-  description: "מערכת תשלומי קריפטו למסעדות עם QR, מעקב חי והפקת חשבונית אוטומטית.",
+  title: "תשלום למסעדה",
+  description: "מערכת תשלומי  למסעדות  QR, מעקב חי והפקת חשבונית אוטומטית.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-        >{`(() => {
+        <Script id="theme-init" strategy="beforeInteractive">{`(() => {
   const storageKey = "now-payment-theme";
   const storedTheme = window.localStorage.getItem(storageKey);
   const theme = storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"

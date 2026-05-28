@@ -225,7 +225,7 @@ export function PaymentForm() {
             <InfoCard
               icon={<ShieldCheck className="h-5 w-5 text-emerald-500" />}
               title="לאחר יצירת התשלום"
-              description="יוצג QR גדול, כתובת הארנק, וסטטוס תשלום חי עד לסיום."
+              description="יוצג QR גדול לקישור התשלום הרשמי של NOWPayments וסטטוס חי עד לסיום."
             />
           </div>
 

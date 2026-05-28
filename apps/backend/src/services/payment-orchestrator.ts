@@ -10,7 +10,6 @@ import {
 
 import { HttpError } from "../lib/http-error.js";
 import { logger } from "../lib/logger.js";
-import { env } from "../config/env.js";
 import { PaymentRepository } from "../repositories/payment.repository.js";
 import { GoogleSheetsService } from "./google-sheets.service.js";
 import { GreenInvoiceService } from "./green-invoice.service.js";
@@ -28,7 +27,7 @@ export class PaymentOrchestrator {
     const localPaymentId = randomUUID();
     const nowPayment = await this.nowPaymentsService.createPayment(input, localPaymentId);
     const timestamp = new Date().toISOString();
-    const paymentUrl = `${env.BASE_URL}/payment/${localPaymentId}`;
+    const paymentUrl = nowPayment.paymentUrl;
 
     const payment: PaymentRecord = {
       id: localPaymentId,
@@ -38,11 +37,12 @@ export class PaymentOrchestrator {
       network: input.network,
       description: input.description,
       customer: input.customer,
-      nowPaymentId: nowPayment.paymentId,
+      nowInvoiceId: nowPayment.invoiceId,
+      ...(nowPayment.paymentId ? { nowPaymentId: nowPayment.paymentId } : {}),
       nowPaymentStatus: this.normalizeStatus(nowPayment.status),
-      nowPayCurrency: nowPayment.payCurrency,
-      payAmount: nowPayment.payAmount,
-      payAddress: nowPayment.payAddress,
+      ...(nowPayment.payCurrency ? { nowPayCurrency: nowPayment.payCurrency } : {}),
+      ...(nowPayment.payAmount ? { payAmount: nowPayment.payAmount } : {}),
+      ...(nowPayment.payAddress ? { payAddress: nowPayment.payAddress } : {}),
       paymentUrl,
       qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=420x420&data=${encodeURIComponent(
         paymentUrl,
@@ -56,11 +56,11 @@ export class PaymentOrchestrator {
 
     return createPaymentResponseSchema.parse({
       payment_id: payment.id,
-      pay_address: payment.payAddress,
-      pay_amount: payment.payAmount,
       payment_url: payment.paymentUrl,
       qr_code_url: payment.qrCodeUrl,
       status: payment.nowPaymentStatus,
+      ...(payment.payAddress ? { pay_address: payment.payAddress } : {}),
+      ...(payment.payAmount !== undefined ? { pay_amount: payment.payAmount } : {}),
     });
   }
 
@@ -90,19 +90,43 @@ export class PaymentOrchestrator {
 
     const payment =
       (parsedPayload.order_id ? await this.repository.getById(parsedPayload.order_id) : null) ??
-      (await this.repository.getByNowPaymentId(parsedPayload.payment_id));
+      (parsedPayload.payment_id
+        ? await this.repository.getByNowPaymentId(parsedPayload.payment_id)
+        : null);
 
     if (!payment) {
       throw new HttpError(404, "התשלום של הוובהוק לא נמצא.");
     }
 
-    const updatedPayment = await this.repository.update(payment.id, (existing) => ({
-      ...existing,
-      nowPaymentStatus: this.normalizeStatus(parsedPayload.payment_status),
-      payAmount: parsedPayload.pay_amount ?? existing.payAmount,
-      nowPayCurrency: parsedPayload.pay_currency ?? existing.nowPayCurrency,
-      updatedAt: new Date().toISOString(),
-    }));
+    const updatedPayment = await this.repository.update(payment.id, (existing) => {
+      const updated: PaymentRecord = {
+        ...existing,
+        nowPaymentStatus: this.normalizeStatus(parsedPayload.payment_status),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (parsedPayload.payment_id) {
+        updated.nowPaymentId = parsedPayload.payment_id;
+      }
+
+      if (parsedPayload.invoice_id) {
+        updated.nowInvoiceId = parsedPayload.invoice_id;
+      }
+
+      if (parsedPayload.pay_amount !== undefined) {
+        updated.payAmount = parsedPayload.pay_amount;
+      }
+
+      if (parsedPayload.pay_currency) {
+        updated.nowPayCurrency = parsedPayload.pay_currency;
+      }
+
+      if (parsedPayload.pay_address) {
+        updated.payAddress = parsedPayload.pay_address;
+      }
+
+      return updated;
+    });
 
     if (!updatedPayment) {
       throw new HttpError(404, "התשלום לא נמצא במהלך עיבוד הוובהוק.");
