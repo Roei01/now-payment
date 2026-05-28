@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const cryptoCurrencySchema = z.enum(["BTC", "ETH", "USDT"]);
+export const cryptoCurrencySchema = z.enum(["BTC", "ETH", "USDT", "USDC"]);
 export const networkSchema = z.enum(["BTC", "ETH", "ERC20", "TRC20"]);
 
 export const customerSchema = z.object({
@@ -43,6 +43,7 @@ export const createPaymentInputSchema = z
       BTC: ["BTC"],
       ETH: ["ETH", "ERC20"],
       USDT: ["ERC20", "TRC20"],
+      USDC: ["ERC20"],
     };
 
     if (!validPairs[value.cryptoCurrency].includes(value.network)) {
@@ -75,6 +76,9 @@ export const paymentRecordSchema = z.object({
   id: z.string(),
   businessId: z.string(),
   amountILS: z.number(),
+  amountUSD: z.number().optional(),
+  usdExchangeRate: z.number().optional(),
+  usdExchangeRateFetchedAt: z.string().optional(),
   cryptoCurrency: cryptoCurrencySchema,
   network: networkSchema,
   description: z.string(),
@@ -101,6 +105,7 @@ export const createPaymentResponseSchema = z.object({
   payment_id: z.string(),
   pay_address: z.string().optional(),
   pay_amount: z.number().optional(),
+  pay_currency: z.string().optional(),
   payment_url: z.string().url(),
   qr_code_url: z.string().url(),
   status: paymentStatusSchema,
@@ -109,12 +114,16 @@ export const createPaymentResponseSchema = z.object({
 export const paymentStatusResponseSchema = paymentRecordSchema.pick({
   id: true,
   amountILS: true,
+  amountUSD: true,
+  usdExchangeRate: true,
+  usdExchangeRateFetchedAt: true,
   cryptoCurrency: true,
   network: true,
   description: true,
   customer: true,
   payAmount: true,
   payAddress: true,
+  nowPayCurrency: true,
   paymentUrl: true,
   qrCodeUrl: true,
   nowPaymentStatus: true,
@@ -140,6 +149,7 @@ export const networkOptionsByCurrency: Record<CryptoCurrency, PaymentNetwork[]> 
   BTC: ["BTC"],
   ETH: ["ETH", "ERC20"],
   USDT: ["ERC20", "TRC20"],
+  USDC: ["ERC20"],
 };
 
 export type CryptoCurrency = z.infer<typeof cryptoCurrencySchema>;

@@ -1,3 +1,4 @@
+import { EmbedButtonShowcase } from "../components/embed-button-showcase";
 import { PaymentForm } from "../components/payment-form";
 import { ThemeToggle } from "../components/theme-toggle";
 
@@ -10,6 +11,7 @@ export default function HomePage() {
         </div>
         <div dir="rtl">
           <PaymentForm />
+          <EmbedButtonShowcase />
         </div>
       </div>
     </main>

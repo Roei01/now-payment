@@ -5,16 +5,20 @@ import { create } from "zustand";
 
 type PaymentDraftState = {
   draft: CreatePaymentInput;
-  setDraft: (nextDraft: Partial<CreatePaymentInput>) => void;
+  setDraft: (nextDraft: PaymentDraftPatch) => void;
   resetDraft: () => void;
+};
+
+type PaymentDraftPatch = Partial<Omit<CreatePaymentInput, "customer">> & {
+  customer?: Partial<CreatePaymentInput["customer"]>;
 };
 
 const initialDraft: CreatePaymentInput = {
   businessId: "default",
   amountILS: 180,
   cryptoCurrency: "USDT",
-  network: "TRC20",
-  description: "שולחן 12",
+  network: "ERC20",
+  description: "",
   customer: {
     fullName: "",
     email: "",

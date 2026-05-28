@@ -82,6 +82,16 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
         : paymentQuery.data.completionState === "failed"
           ? "נכשל"
           : "ממתין";
+  const qrHelperText = paymentQuery.data.payAddress
+    ? "סריקת ה-QR תפתח בארנק את כתובת ההפקדה של NOWPayments. יש לשלוח את הסכום המדויק שמופיע כאן."
+    : "סריקת ה-QR תפתח את עמוד התשלום המאובטח של NOWPayments. לאחר התשלום הסטטוס יתעדכן אוטומטית.";
+  const payCurrencyLabel =
+    paymentQuery.data.nowPayCurrency?.toUpperCase() ??
+    paymentQuery.data.cryptoCurrency;
+  const usdHelperText =
+    paymentQuery.data.amountUSD !== undefined
+      ? `$${paymentQuery.data.amountUSD.toFixed(2)} לפי שער ${paymentQuery.data.usdExchangeRate?.toFixed(4) ?? "-"}`
+      : "יומר לדולר לפי שער עדכני";
 
   return (
     <div className="grid gap-4 rounded-[1.7rem] border border-slate-200 bg-white p-3 shadow-[0_18px_48px_-28px_rgba(15,23,42,0.16)] md:p-4 lg:grid-cols-[0.92fr_1.08fr]">
@@ -98,8 +108,7 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
           />
         </div>
         <p className="mt-4 text-center text-[13px] leading-5 text-slate-500">
-          סריקת ה-QR תפתח את עמוד התשלום המאובטח של NOWPayments. לאחר התשלום
-          הסטטוס יתעדכן אוטומטית.
+          {qrHelperText}
         </p>
       </div>
 
@@ -136,9 +145,13 @@ export function PaymentStatusCard({ paymentId }: { paymentId: string }) {
                 ? paymentQuery.data.payAmount.toString()
                 : "מתעדכן בעמוד התשלום"
             }
-            helper={paymentQuery.data.cryptoCurrency}
+            helper={payCurrencyLabel}
           />
-          <MetricCard label="שווי בשקלים" value={formatIlsAmount(paymentQuery.data.amountILS)} helper='ש"ח' />
+          <MetricCard
+            label="שווי בשקלים"
+            value={formatIlsAmount(paymentQuery.data.amountILS)}
+            helper={usdHelperText}
+          />
         </div>
 
         <div className="rounded-[1.45rem] border border-slate-200 bg-slate-50 p-4">
