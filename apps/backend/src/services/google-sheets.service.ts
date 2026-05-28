@@ -23,7 +23,7 @@ export class GoogleSheetsService {
             payment.updatedAt,
             payment.amountILS,
             payment.cryptoCurrency,
-            payment.payAmount,
+            payment.payAmount ?? "",
             payment.nowPaymentStatus,
             payment.customer.fullName,
           ],

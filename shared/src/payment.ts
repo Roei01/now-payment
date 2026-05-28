@@ -79,11 +79,13 @@ export const paymentRecordSchema = z.object({
   network: networkSchema,
   description: z.string(),
   customer: customerSchema,
-  nowPaymentId: z.string(),
+  nowPaymentId: z.string().optional(),
+  nowInvoiceId: z.string().optional(),
+  nowPurchaseId: z.string().optional(),
   nowPaymentStatus: paymentStatusSchema,
-  nowPayCurrency: z.string(),
-  payAmount: z.number(),
-  payAddress: z.string(),
+  nowPayCurrency: z.string().optional(),
+  payAmount: z.number().optional(),
+  payAddress: z.string().optional(),
   paymentUrl: z.string().url(),
   qrCodeUrl: z.string().url(),
   invoiceId: z.string().optional(),
@@ -97,8 +99,8 @@ export const paymentRecordSchema = z.object({
 
 export const createPaymentResponseSchema = z.object({
   payment_id: z.string(),
-  pay_address: z.string(),
-  pay_amount: z.number(),
+  pay_address: z.string().optional(),
+  pay_amount: z.number().optional(),
   payment_url: z.string().url(),
   qr_code_url: z.string().url(),
   status: paymentStatusSchema,
@@ -123,12 +125,15 @@ export const paymentStatusResponseSchema = paymentRecordSchema.pick({
 });
 
 export const paymentWebhookSchema = z.object({
-  payment_id: z.union([z.string(), z.number()]).transform(String),
+  payment_id: z.union([z.string(), z.number()]).transform(String).optional(),
+  invoice_id: z.union([z.string(), z.number()]).transform(String).optional(),
+  purchase_id: z.union([z.string(), z.number()]).transform(String).optional(),
   payment_status: paymentStatusSchema,
   order_id: z.union([z.string(), z.number()]).transform(String).optional(),
   price_amount: z.coerce.number().optional(),
   pay_amount: z.coerce.number().optional(),
   pay_currency: z.string().optional(),
+  pay_address: z.string().optional(),
 });
 
 export const networkOptionsByCurrency: Record<CryptoCurrency, PaymentNetwork[]> = {

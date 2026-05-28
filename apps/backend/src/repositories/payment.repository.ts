@@ -49,7 +49,8 @@ export class PaymentRepository {
 
   async getByNowPaymentId(nowPaymentId: string) {
     return (
-      [...this.records.values()].find((record) => record.nowPaymentId === nowPaymentId) ?? null
+      [...this.records.values()].find((record) => record.nowPaymentId === nowPaymentId) ??
+      null
     );
   }
 

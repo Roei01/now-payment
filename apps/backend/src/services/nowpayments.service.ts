@@ -44,28 +44,33 @@ const payCurrencyConfig: Record<
 };
 
 type CreatedNowPayment = {
-  paymentId: string;
-  payAddress: string;
-  payAmount: number;
-  payCurrency: string;
+  invoiceId: string;
+  paymentId?: string;
+  payAddress?: string;
+  payAmount?: number;
+  payCurrency?: string;
+  paymentUrl: string;
   status: string;
 };
 
 type NowPaymentsCreateRequest = {
   price_amount: number;
-  price_currency: "usd";
+  price_currency: "ils";
   pay_currency: string;
   order_id: string;
   order_description: string;
   ipn_callback_url: string;
-  customer_email: string;
+  success_url: string;
+  cancel_url: string;
 };
 
 type NowPaymentsCreateResponse = {
+  id?: number | string;
   payment_id?: number | string;
   pay_address?: string;
   pay_amount?: number;
   pay_currency?: string;
+  invoice_url?: string;
   payment_status?: string;
 };
 
@@ -96,30 +101,43 @@ export class NowPaymentsService {
 
     for (const [index, payload] of payloadCandidates.entries()) {
 
-      logger.info({ payload }, "Creating NOWPayments payment");
+      logger.info({ payload }, "Creating NOWPayments invoice");
 
       try {
         const createResponse = await this.client.post<NowPaymentsCreateResponse>(
-          "/payment",
+          "/invoice",
           payload,
         );
         const responseData = createResponse.data;
 
-        if (!responseData.payment_id || !responseData.pay_address || !responseData.pay_amount) {
+        if (!responseData.id || !responseData.invoice_url) {
           throw new HttpError(
             502,
-            "NOWPayments לא החזיר את כל פרטי התשלום הנדרשים.",
+            "NOWPayments לא החזיר קישור חשבונית תקין.",
             responseData,
           );
         }
 
-        return {
-          paymentId: String(responseData.payment_id),
-          payAddress: responseData.pay_address,
-          payAmount: Number(responseData.pay_amount),
+        const createdPayment: CreatedNowPayment = {
+          invoiceId: String(responseData.id),
           payCurrency: responseData.pay_currency ?? payload.pay_currency,
+          paymentUrl: responseData.invoice_url,
           status: responseData.payment_status ?? "waiting",
         };
+
+        if (responseData.payment_id) {
+          createdPayment.paymentId = String(responseData.payment_id);
+        }
+
+        if (responseData.pay_address) {
+          createdPayment.payAddress = responseData.pay_address;
+        }
+
+        if (typeof responseData.pay_amount === "number") {
+          createdPayment.payAmount = responseData.pay_amount;
+        }
+
+        return createdPayment;
       } catch (error) {
         if (axios.isAxiosError(error)) {
           lastAxiosError = error;
@@ -130,7 +148,7 @@ export class NowPaymentsService {
               data: error.response?.data,
               payload,
             },
-            "NOWPayments create payment failed",
+            "NOWPayments create invoice failed",
           );
 
           const shouldTryFallback =
@@ -238,12 +256,13 @@ export class NowPaymentsService {
 
     return uniquePayCurrencies.map((payCurrency) => ({
       price_amount: input.amountILS,
-      price_currency: "usd",
+      price_currency: "ils",
       pay_currency: payCurrency,
       order_id: localPaymentId,
       order_description: input.description,
       ipn_callback_url: `${env.BACKEND_URL}/api/payment/webhook`,
-      customer_email: input.customer.email,
+      success_url: `${env.BASE_URL}/payment/${localPaymentId}`,
+      cancel_url: `${env.BASE_URL}/payment/${localPaymentId}`,
     }));
   }
 
