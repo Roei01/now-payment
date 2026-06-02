@@ -20,7 +20,8 @@ type UsdExchangeRate = {
   fetchedAt: string;
 };
 
-let usdExchangeRateCache: (UsdExchangeRate & { expiresAt: number }) | null = null;
+let usdExchangeRateCache: (UsdExchangeRate & { expiresAt: number }) | null =
+  null;
 
 const payCurrencyConfig: Record<
   CryptoCurrency,
@@ -125,7 +126,10 @@ export class NowPaymentsService {
       throw new HttpError(400, "הסכום חייב להיות גדול מ-0.");
     }
 
-    const payloadCandidates = this.buildPayloadCandidates(input, localPaymentId);
+    const payloadCandidates = this.buildPayloadCandidates(
+      input,
+      localPaymentId,
+    );
     const usdExchangeRate = await this.getUsdExchangeRate();
     const amountUSD = this.roundMoney(input.amountILS * usdExchangeRate.rate);
     let lastAxiosError: unknown = null;
@@ -139,10 +143,11 @@ export class NowPaymentsService {
       logger.info({ payload }, "Creating NOWPayments invoice");
 
       try {
-        const createResponse = await this.client.post<NowPaymentsCreateResponse>(
-          "/invoice",
-          payload,
-        );
+        const createResponse =
+          await this.client.post<NowPaymentsCreateResponse>(
+            "/invoice",
+            payload,
+          );
         const responseData = createResponse.data;
 
         if (!responseData.id || !responseData.invoice_url) {
@@ -154,15 +159,17 @@ export class NowPaymentsService {
         }
 
         const invoiceId = String(responseData.id);
+        const invoicePaymentBody = {
+          iid: invoiceId,
+          pay_currency: payload.pay_currency,
+          order_description: payload.order_description,
+          customer_email: input.customer.email,
+        } satisfies NowPaymentsInvoicePaymentRequest;
+
         const invoicePaymentResponse =
           await this.client.post<NowPaymentsInvoicePaymentResponse>(
             "/invoice-payment",
-            {
-              iid: invoiceId,
-              pay_currency: payload.pay_currency,
-              order_description: payload.order_description,
-              customer_email: input.customer.email,
-            } satisfies NowPaymentsInvoicePaymentRequest,
+            invoicePaymentBody,
           );
         const invoicePaymentData = invoicePaymentResponse.data;
         const payAmount =
@@ -248,9 +255,9 @@ export class NowPaymentsService {
       502,
       JSON.stringify(
         axios.isAxiosError(lastAxiosError)
-          ? lastAxiosError.response?.data ?? {
+          ? (lastAxiosError.response?.data ?? {
               message: "Unknown NOWPayments error",
-            }
+            })
           : { message: "Unknown NOWPayments error" },
       ),
     );
@@ -266,7 +273,7 @@ export class NowPaymentsService {
       customer: {
         fullName: "Development Test",
         email: "dev-test@example.com",
-        phone: "0500000000",
+        phone: "05X-XXX-XXXX",
       },
     };
 

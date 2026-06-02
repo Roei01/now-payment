@@ -35,6 +35,7 @@ export class PaymentOrchestrator {
       businessId: input.businessId,
       amountILS: input.amountILS,
       amountUSD: nowPayment.amountUSD,
+      priceAmount: nowPayment.amountUSD,
       usdExchangeRate: nowPayment.usdExchangeRate,
       usdExchangeRateFetchedAt: nowPayment.usdExchangeRateFetchedAt,
       cryptoCurrency: input.cryptoCurrency,
@@ -58,6 +59,12 @@ export class PaymentOrchestrator {
     };
 
     await this.repository.save(payment);
+    await this.googleSheetsService.appendPayment(payment);
+    await this.repository.update(payment.id, (existing) => ({
+      ...existing,
+      sheetsSyncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
 
     return createPaymentResponseSchema.parse({
       payment_id: payment.id,
@@ -131,6 +138,57 @@ export class PaymentOrchestrator {
         updated.payAddress = parsedPayload.pay_address;
       }
 
+      if (parsedPayload.purchase_id) {
+        updated.nowPurchaseId = parsedPayload.purchase_id;
+      }
+
+      if (parsedPayload.price_amount !== undefined) {
+        updated.priceAmount = parsedPayload.price_amount;
+      }
+
+      if (parsedPayload.actually_paid !== undefined) {
+        updated.actuallyPaid = parsedPayload.actually_paid;
+      }
+
+      if (parsedPayload.outcome_amount !== undefined) {
+        updated.outcomeAmount = parsedPayload.outcome_amount;
+      }
+
+      if (parsedPayload.outcome_currency) {
+        updated.outcomeCurrency = parsedPayload.outcome_currency;
+      }
+
+      const extraIds = this.normalizeExtraIds(parsedPayload.payment_extra_ids);
+      if (extraIds) {
+        updated.paymentExtraIds = extraIds;
+      }
+
+      if (parsedPayload.payin_hash) {
+        updated.payinHash = parsedPayload.payin_hash;
+      }
+
+      if (parsedPayload.payout_address) {
+        updated.payoutAddress = parsedPayload.payout_address;
+      }
+
+      const networkFee = parsedPayload.network_fee ?? parsedPayload.fee?.withdrawalFee;
+      if (networkFee !== undefined) {
+        updated.networkFee = networkFee;
+      }
+
+      const serviceFee = parsedPayload.service_fee ?? parsedPayload.fee?.serviceFee;
+      if (serviceFee !== undefined) {
+        updated.serviceFee = serviceFee;
+      }
+
+      if (parsedPayload.created_at) {
+        updated.nowCreatedAt = parsedPayload.created_at;
+      }
+
+      if (parsedPayload.updated_at) {
+        updated.nowUpdatedAt = parsedPayload.updated_at;
+      }
+
       return updated;
     });
 
@@ -190,8 +248,25 @@ export class PaymentOrchestrator {
     }
   }
 
-  private normalizeStatus(status: string): PaymentRecord["nowPaymentStatus"] {
-    switch (status.toLowerCase()) {
+  private normalizeExtraIds(value: unknown): string | undefined {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (Array.isArray(value)) {
+      const joined = value.map((item) => String(item)).join(", ");
+      return joined.length > 0 ? joined : undefined;
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+
+  private normalizeStatus(status: string | undefined): PaymentRecord["nowPaymentStatus"] {
+    switch ((status ?? "").toLowerCase()) {
       case "finished":
         return "finished";
       case "confirming":

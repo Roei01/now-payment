@@ -57,7 +57,9 @@ export default function DemoCheckoutPage() {
 
         <section className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.2)] md:p-6">
           <div className="mb-5">
-            <p className="text-sm font-semibold text-emerald-600">Checkout form</p>
+            <p className="text-sm font-semibold text-emerald-600">
+              Checkout form
+            </p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
               פרטי תשלום רגילים
             </h2>
@@ -71,7 +73,9 @@ export default function DemoCheckoutPage() {
             <DemoField label='סכום לתשלום (ש"ח)'>
               <input
                 value={form.amountILS}
-                onChange={(event) => updateField("amountILS")(event.target.value)}
+                onChange={(event) =>
+                  updateField("amountILS")(event.target.value)
+                }
                 type="number"
                 min="1"
                 step="0.01"
@@ -82,7 +86,9 @@ export default function DemoCheckoutPage() {
             <DemoField label="מזהה עסק">
               <input
                 value={form.businessId}
-                onChange={(event) => updateField("businessId")(event.target.value)}
+                onChange={(event) =>
+                  updateField("businessId")(event.target.value)
+                }
                 className={inputClassName}
                 dir="ltr"
               />
@@ -92,7 +98,9 @@ export default function DemoCheckoutPage() {
               <DemoField label="תיאור עסקה / מס׳ עסקה">
                 <input
                   value={form.description}
-                  onChange={(event) => updateField("description")(event.target.value)}
+                  onChange={(event) =>
+                    updateField("description")(event.target.value)
+                  }
                   className={inputClassName}
                   placeholder="Order #12345"
                 />
@@ -102,7 +110,9 @@ export default function DemoCheckoutPage() {
             <DemoField label="שם מלא">
               <input
                 value={form.fullName}
-                onChange={(event) => updateField("fullName")(event.target.value)}
+                onChange={(event) =>
+                  updateField("fullName")(event.target.value)
+                }
                 className={inputClassName}
                 placeholder="שם הלקוח"
               />
@@ -113,7 +123,7 @@ export default function DemoCheckoutPage() {
                 value={form.phone}
                 onChange={(event) => updateField("phone")(event.target.value)}
                 className={inputClassName}
-                placeholder="0500000000"
+                placeholder="05X-XXX-XXXX"
                 dir="ltr"
               />
             </DemoField>
@@ -135,7 +145,9 @@ export default function DemoCheckoutPage() {
               <select
                 value={form.currency}
                 onChange={(event) =>
-                  updateField("currency")(event.target.value as DemoFormState["currency"])
+                  updateField("currency")(
+                    event.target.value as DemoFormState["currency"],
+                  )
                 }
                 className={inputClassName}
               >
@@ -150,7 +162,9 @@ export default function DemoCheckoutPage() {
               <select
                 value={form.network}
                 onChange={(event) =>
-                  updateField("network")(event.target.value as DemoFormState["network"])
+                  updateField("network")(
+                    event.target.value as DemoFormState["network"],
+                  )
                 }
                 className={inputClassName}
               >

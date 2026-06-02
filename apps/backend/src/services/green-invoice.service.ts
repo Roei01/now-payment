@@ -26,34 +26,41 @@ export class GreenInvoiceService {
   async createInvoiceReceipt(payment: PaymentRecord) {
     const token = await this.getToken();
 
+    const today = new Date().toISOString().slice(0, 10);
+
     const response = await this.client.post<{
       id?: string | number;
       documentId?: string | number;
+      number?: number;
     }>(
       "/documents",
       {
-        type: 320,
+        type: 400, // קבלה — supported for this business type
         lang: "he",
         currency: "ILS",
-        remarks: payment.description,
+        vatType: 1, // exempt (עוסק פטור / no VAT on amount)
+        date: today,
         client: {
           name: payment.customer.fullName,
           emails: [payment.customer.email],
           phone: payment.customer.phone,
         },
         sendEmail: true,
-        emailContent: {
-          subject: `חשבונית עבור ${payment.description}`,
-          body: `תודה על התשלום בסך ${payment.amountILS} ש"ח.`,
-        },
         income: [
           {
-            catalogNum: payment.id,
             description: payment.description,
             quantity: 1,
             price: payment.amountILS,
             currency: "ILS",
-            vatType: 0,
+            vatType: 1,
+          },
+        ],
+        payment: [
+          {
+            type: 4, // העברה בנקאית / crypto transfer
+            price: payment.amountILS,
+            currency: "ILS",
+            date: today,
           },
         ],
       },
@@ -67,7 +74,7 @@ export class GreenInvoiceService {
     const invoiceId = response.data.id ?? response.data.documentId;
 
     if (!invoiceId) {
-      throw new HttpError(502, "GreenInvoice לא החזיר מזהה חשבונית.");
+      throw new HttpError(502, "GreenInvoice לא החזיר מזהה קבלה.");
     }
 
     return String(invoiceId);
@@ -81,8 +88,9 @@ export class GreenInvoiceService {
     const response = await this.client.post<{
       token?: string;
       jwt?: string;
+      expires?: number;
       expiresIn?: number;
-    }>("/account/login", {
+    }>("/account/token", {
       id: env.GREEN_API_KEY,
       secret: env.GREEN_API_SECRET,
     });
@@ -93,9 +101,15 @@ export class GreenInvoiceService {
       throw new HttpError(502, "אימות מול GreenInvoice נכשל ולא הוחזר טוקן.");
     }
 
+    // Morning returns `expires` as an absolute unix timestamp (seconds).
+    // Fall back to a relative `expiresIn`, then to a 1 hour default.
+    const expiresAt = response.data.expires
+      ? response.data.expires * 1000 - 60_000
+      : Date.now() + (response.data.expiresIn ?? 3600) * 1000 - 60_000;
+
     this.tokenCache = {
       value: token,
-      expiresAt: Date.now() + (response.data.expiresIn ?? 3600) * 1000 - 60_000,
+      expiresAt,
     };
 
     return token;

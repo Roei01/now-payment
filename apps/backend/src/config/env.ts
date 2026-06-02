@@ -22,6 +22,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_EMAIL: z.string().min(1),
   GOOGLE_PRIVATE_KEY: z.string().min(1),
   GOOGLE_SHEET_ID: z.string().min(1),
+  GOOGLE_SHEET_TAB: z.string().min(1).optional(),
 });
 
 const parsedEnv = envSchema.parse({
