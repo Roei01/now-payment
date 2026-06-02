@@ -97,6 +97,7 @@ export const paymentRecordSchema = z.object({
   outcomeCurrency: z.string().optional(),
   paymentExtraIds: z.string().optional(),
   payinHash: z.string().optional(),
+  payoutHash: z.string().optional(),
   networkFee: z.number().optional(),
   serviceFee: z.number().optional(),
   payoutAddress: z.string().optional(),

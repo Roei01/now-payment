@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { PaymentForm } from "../components/payment-form";
 import { ThemeToggle } from "../components/theme-toggle";
 
@@ -12,7 +14,9 @@ export default function HomePage() {
           <ThemeToggle />
         </div>
         <div dir="rtl">
-          <PaymentForm />
+          <Suspense>
+            <PaymentForm />
+          </Suspense>
         </div>
       </div>
     </main>

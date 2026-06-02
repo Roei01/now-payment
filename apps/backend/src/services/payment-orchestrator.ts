@@ -167,6 +167,10 @@ export class PaymentOrchestrator {
         updated.payinHash = parsedPayload.payin_hash;
       }
 
+      if (parsedPayload.payout_hash) {
+        updated.payoutHash = parsedPayload.payout_hash;
+      }
+
       if (parsedPayload.payout_address) {
         updated.payoutAddress = parsedPayload.payout_address;
       }

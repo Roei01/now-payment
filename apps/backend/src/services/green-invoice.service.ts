@@ -28,6 +28,8 @@ export class GreenInvoiceService {
 
     const today = new Date().toISOString().slice(0, 10);
 
+    const remarks = this.buildRemarks(payment);
+
     const response = await this.client.post<{
       id?: string | number;
       documentId?: string | number;
@@ -46,6 +48,7 @@ export class GreenInvoiceService {
           phone: payment.customer.phone,
         },
         sendEmail: true,
+        remarks,
         income: [
           {
             description: payment.description,
@@ -78,6 +81,53 @@ export class GreenInvoiceService {
     }
 
     return String(invoiceId);
+  }
+
+  private buildRemarks(payment: PaymentRecord): string {
+    const lines: string[] = ["פרטי עסקת קריפטו:"];
+
+    const currency = payment.nowPayCurrency ?? payment.cryptoCurrency;
+    const network = payment.network;
+    lines.push(`מטבע: ${currency} (${network})`);
+
+    if (payment.payAmount !== undefined) {
+      lines.push(`סכום קריפטו ששולם: ${payment.payAmount} ${currency}`);
+    }
+
+    if (payment.usdExchangeRate !== undefined && payment.amountUSD !== undefined) {
+      lines.push(`שער המרה: 1 USD = ${payment.usdExchangeRate.toFixed(2)} ₪`);
+    }
+
+    lines.push("");
+    lines.push(`לפני מע"מ: ${payment.amountILS.toFixed(2)} ₪`);
+    lines.push(`מע"מ (0%): 0.00 ₪`);
+    lines.push(`סך הכל: ${payment.amountILS.toFixed(2)} ₪`);
+
+    if (payment.payAddress) {
+      lines.push("");
+      lines.push(`ארנק שולח (Payin Address):`);
+      lines.push(payment.payAddress);
+    }
+
+    if (payment.payoutAddress) {
+      lines.push("");
+      lines.push(`ארנק מקבל (Payout Address):`);
+      lines.push(payment.payoutAddress);
+    }
+
+    if (payment.payinHash) {
+      lines.push("");
+      lines.push(`Hash כניסה (Payin Hash):`);
+      lines.push(payment.payinHash);
+    }
+
+    if (payment.payoutHash) {
+      lines.push("");
+      lines.push(`Hash יציאה (Payout Hash):`);
+      lines.push(payment.payoutHash);
+    }
+
+    return lines.join("\n");
   }
 
   private async getToken() {
