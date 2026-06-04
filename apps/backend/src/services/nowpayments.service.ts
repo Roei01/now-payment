@@ -289,18 +289,30 @@ export class NowPaymentsService {
       throw new HttpError(400, "חסר גוף בקשה גולמי לצורך אימות הוובהוק.");
     }
 
+    const secret = env.NOWPAYMENTS_IPN_SECRET;
+
     const sortedPayload = this.stableStringify(payload);
     const generated = crypto
-      .createHmac("sha512", env.NOWPAYMENTS_IPN_SECRET)
+      .createHmac("sha512", secret)
       .update(sortedPayload)
       .digest("hex");
 
     const rawBodySignature = crypto
-      .createHmac("sha512", env.NOWPAYMENTS_IPN_SECRET)
+      .createHmac("sha512", secret)
       .update(rawBody)
       .digest("hex");
 
     if (generated !== signature && rawBodySignature !== signature) {
+      logger.warn(
+        {
+          secretLength: secret.length,
+          receivedSig: signature.slice(0, 16) + "…",
+          generatedSig: generated.slice(0, 16) + "…",
+          rawBodySig: rawBodySignature.slice(0, 16) + "…",
+          rawBodyLength: rawBody.length,
+        },
+        "Webhook signature mismatch",
+      );
       throw new HttpError(401, "חתימת הוובהוק של NOWPayments אינה תקינה.");
     }
   }
