@@ -4,7 +4,6 @@ import type {
   CreatePaymentInput,
   CryptoCurrency,
   PaymentNetwork,
-  PaymentWebhookPayload,
 } from "@now-payment/shared";
 import axios, { AxiosInstance } from "axios";
 
@@ -280,41 +279,51 @@ export class NowPaymentsService {
     return this.createPayment(testInput, `dev-test-${Date.now()}`);
   }
 
-  verifySignature(
-    rawBody: string | undefined,
-    payload: PaymentWebhookPayload,
-    signature: string,
-  ) {
+  verifySignature(rawBody: string | undefined, signature: string) {
     if (!rawBody) {
       throw new HttpError(400, "חסר גוף בקשה גולמי לצורך אימות הוובהוק.");
     }
 
     const secret = env.NOWPAYMENTS_IPN_SECRET;
 
-    const sortedPayload = this.stableStringify(payload);
+    // NOWPayments signs the ORIGINAL JSON payload with its keys sorted
+    // recursively (alphabetically), hashed via HMAC-SHA512 (hex digest).
+    // We must rebuild the string from the untouched raw body — NOT from a
+    // zod-parsed object, because parsing coerces types (string→number) and
+    // drops null/undefined fields, which changes the bytes and breaks the
+    // hash. That mismatch is exactly what produced the 401 loop.
+    let sortedPayload: string;
+    try {
+      sortedPayload = this.stableStringify(JSON.parse(rawBody));
+    } catch {
+      throw new HttpError(400, "גוף הוובהוק של NOWPayments אינו JSON תקין.");
+    }
+
     const generated = crypto
       .createHmac("sha512", secret)
       .update(sortedPayload)
       .digest("hex");
 
-    const rawBodySignature = crypto
-      .createHmac("sha512", secret)
-      .update(rawBody)
-      .digest("hex");
+    const matches =
+      generated.length === signature.length &&
+      crypto.timingSafeEqual(Buffer.from(generated), Buffer.from(signature));
 
-    if (generated !== signature && rawBodySignature !== signature) {
+    if (!matches) {
       logger.warn(
         {
+          secretConfigured: secret.length > 0,
           secretLength: secret.length,
-          receivedSig: signature.slice(0, 16) + "…",
-          generatedSig: generated.slice(0, 16) + "…",
-          rawBodySig: rawBodySignature.slice(0, 16) + "…",
+          receivedSig: `${signature.slice(0, 12)}…`,
+          generatedSig: `${generated.slice(0, 12)}…`,
           rawBodyLength: rawBody.length,
+          sortedPayloadPreview: sortedPayload.slice(0, 200),
         },
-        "Webhook signature mismatch",
+        "NOWPayments webhook signature mismatch",
       );
       throw new HttpError(401, "חתימת הוובהוק של NOWPayments אינה תקינה.");
     }
+
+    logger.info("NOWPayments webhook signature verified");
   }
 
   private buildPayloadCandidates(

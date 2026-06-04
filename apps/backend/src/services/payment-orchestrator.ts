@@ -95,11 +95,25 @@ export class PaymentOrchestrator {
 
   async handleWebhook(payload: unknown, signature: string | undefined, rawBody: string | undefined) {
     if (!signature) {
+      logger.warn("Webhook received without x-nowpayments-sig header");
       throw new HttpError(401, "חסרה חתימת אימות של NOWPayments.");
     }
 
+    // Verify against the untouched raw body BEFORE zod parsing.
+    this.nowPaymentsService.verifySignature(rawBody, signature);
+
     const parsedPayload = paymentWebhookSchema.parse(payload);
-    this.nowPaymentsService.verifySignature(rawBody, parsedPayload, signature);
+
+    logger.info(
+      {
+        nowPaymentId: parsedPayload.payment_id,
+        orderId: parsedPayload.order_id,
+        status: parsedPayload.payment_status,
+        actuallyPaid: parsedPayload.actually_paid,
+        payCurrency: parsedPayload.pay_currency,
+      },
+      "Webhook payload accepted",
+    );
 
     const payment =
       (parsedPayload.order_id ? await this.repository.getById(parsedPayload.order_id) : null) ??
@@ -108,8 +122,17 @@ export class PaymentOrchestrator {
         : null);
 
     if (!payment) {
+      logger.warn(
+        {
+          orderId: parsedPayload.order_id,
+          nowPaymentId: parsedPayload.payment_id,
+        },
+        "Webhook payment record not found",
+      );
       throw new HttpError(404, "התשלום של הוובהוק לא נמצא.");
     }
+
+    const previousStatus = payment.nowPaymentStatus;
 
     const updatedPayment = await this.repository.update(payment.id, (existing) => {
       const updated: PaymentRecord = {
@@ -200,7 +223,20 @@ export class PaymentOrchestrator {
       throw new HttpError(404, "התשלום לא נמצא במהלך עיבוד הוובהוק.");
     }
 
+    logger.info(
+      {
+        paymentId: updatedPayment.id,
+        previousStatus,
+        newStatus: updatedPayment.nowPaymentStatus,
+      },
+      "Webhook updated payment status",
+    );
+
     if (updatedPayment.nowPaymentStatus === "finished") {
+      logger.info(
+        { paymentId: updatedPayment.id },
+        "Payment finished — starting finalization (sheets + invoice)",
+      );
       await this.finalizePayment(updatedPayment.id);
     }
 
@@ -227,7 +263,10 @@ export class PaymentOrchestrator {
 
     try {
       await this.googleSheetsService.appendPayment(processingPayment);
+      logger.info({ paymentId }, "Payment synced to Google Sheets");
+
       const invoiceId = await this.greenInvoiceService.createInvoiceReceipt(processingPayment);
+      logger.info({ paymentId, invoiceId }, "Morning receipt created");
 
       await this.repository.update(processingPayment.id, (existing) => ({
         ...existing,
@@ -238,6 +277,8 @@ export class PaymentOrchestrator {
         completionError: undefined,
         updatedAt: new Date().toISOString(),
       }));
+
+      logger.info({ paymentId, invoiceId }, "Payment finalized successfully");
     } catch (error) {
       logger.error({ error, paymentId }, "Failed to finalize payment");
 

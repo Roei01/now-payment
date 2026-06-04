@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { createPaymentInputSchema } from "@now-payment/shared";
 
 import { HttpError } from "../lib/http-error.js";
+import { logger } from "../lib/logger.js";
 import type { PaymentOrchestrator } from "../services/payment-orchestrator.js";
 
 export class PaymentController {
@@ -26,9 +27,22 @@ export class PaymentController {
   };
 
   receiveWebhook = async (request: Request, response: Response) => {
+    const signature = request.header("x-nowpayments-sig") ?? undefined;
+
+    logger.info(
+      {
+        hasSignature: Boolean(signature),
+        bodyKeys:
+          request.body && typeof request.body === "object"
+            ? Object.keys(request.body as Record<string, unknown>)
+            : [],
+      },
+      "Incoming NOWPayments webhook",
+    );
+
     await this.paymentOrchestrator.handleWebhook(
       request.body,
-      request.header("x-nowpayments-sig") ?? undefined,
+      signature,
       request.rawBody,
     );
 
