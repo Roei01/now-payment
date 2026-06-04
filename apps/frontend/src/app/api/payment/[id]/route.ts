@@ -10,11 +10,28 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
-  const response = await fetch(`${backendUrl}/api/payment/${id}`, {
-    method: "GET",
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${backendUrl}/api/payment/${id}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `לא ניתן להתחבר לשרת: ${message}` },
+      { status: 502 },
+    );
+  }
 
-  const data = await response.json();
-  return NextResponse.json(data, { status: response.status });
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    return NextResponse.json(data, { status: response.status });
+  } catch {
+    return NextResponse.json(
+      { error: `תגובה לא תקינה מהשרת (${response.status}): ${text.slice(0, 200)}` },
+      { status: 502 },
+    );
+  }
 }
