@@ -316,9 +316,9 @@ export class NowPaymentsService {
           receivedSig: `${signature.slice(0, 12)}…`,
           generatedSig: `${generated.slice(0, 12)}…`,
           rawBodyLength: rawBody.length,
-          sortedPayloadPreview: sortedPayload.slice(0, 200),
+          sortedPayloadPreview: sortedPayload.slice(0, 120),
         },
-        "NOWPayments webhook signature mismatch",
+        "NOWPayments webhook signature mismatch — check that NOWPAYMENTS_IPN_SECRET matches the IPN secret in the NOWPayments dashboard",
       );
       throw new HttpError(401, "חתימת הוובהוק של NOWPayments אינה תקינה.");
     }
