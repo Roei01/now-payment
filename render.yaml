@@ -1,42 +1,23 @@
 # Render Blueprint for the paper/live trading app in ./trading.
-# Web (API + mobile UI), background worker (trading cycles) and Postgres.
-# Secrets marked `sync: false` are entered in the Render dashboard, never committed.
-services:
-  - type: web
-    name: trading-web
-    runtime: node
-    rootDir: trading
-    plan: starter
-    buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm run start:api
-    healthCheckPath: /api/health
-    envVars: &shared
+# Creates: web (API + mobile UI), background worker (trading cycles), Postgres,
+# and an Env Group with the non-secret settings shared by both services.
+# Values marked `sync: false` are secrets: Render asks for them when the Blueprint is created.
+# Enter the same secret values for the web service and the worker.
+envVarGroups:
+  - name: trading-settings
+    envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: trading-db
-          property: connectionString
       - key: APP_SECRET
-        sync: false
-      - key: SETUP_TOKEN
-        sync: false
+        generateValue: true
       - key: MARKET_DATA_PROVIDER
         value: alpaca
-      - key: MARKET_DATA_API_KEY
-        sync: false
-      - key: MARKET_DATA_API_SECRET
-        sync: false
       - key: ALPACA_DATA_FEED
         value: iex
       - key: FX_PROVIDER
         value: frankfurter
-      - key: SEC_EDGAR_USER_AGENT
-        sync: false
       - key: AI_PROVIDER
         value: anthropic
-      - key: AI_API_KEY
-        sync: false
       - key: AI_MANAGER_MODEL
         value: claude-opus-5
       - key: AI_MONTHLY_BUDGET_ILS
@@ -47,14 +28,42 @@ services:
         value: "75"
       - key: NOTIFICATIONS_PROVIDER
         value: resend
+      - key: DIGEST_HOUR_IL
+        value: "23"
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
+
+services:
+  - type: web
+    name: trading-web
+    runtime: node
+    rootDir: trading
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:api
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trading-db
+          property: connectionString
+      - fromGroup: trading-settings
+      - key: MARKET_DATA_API_KEY
+        sync: false
+      - key: MARKET_DATA_API_SECRET
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: SEC_EDGAR_USER_AGENT
+        sync: false
       - key: NOTIFICATIONS_API_KEY
         sync: false
       - key: ALERT_EMAIL_TO
         sync: false
       - key: ALERT_EMAIL_FROM
         sync: false
-      - key: LIVE_TRADING_ENABLED
-        value: "false"
+      - key: SETUP_TOKEN
+        sync: false
   - type: worker
     name: trading-worker
     runtime: node
@@ -62,7 +71,26 @@ services:
     plan: starter
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run start:worker
-    envVars: *shared
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trading-db
+          property: connectionString
+      - fromGroup: trading-settings
+      - key: MARKET_DATA_API_KEY
+        sync: false
+      - key: MARKET_DATA_API_SECRET
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: SEC_EDGAR_USER_AGENT
+        sync: false
+      - key: NOTIFICATIONS_API_KEY
+        sync: false
+      - key: ALERT_EMAIL_TO
+        sync: false
+      - key: ALERT_EMAIL_FROM
+        sync: false
 
 databases:
   - name: trading-db

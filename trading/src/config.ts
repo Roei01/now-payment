@@ -37,11 +37,16 @@ const EnvSchema = z.object({
   // Fundamentals from SEC EDGAR (free, requires a descriptive User-Agent with contact e-mail).
   SEC_EDGAR_USER_AGENT: z.string().optional(),
 
-  // AI manager (Anthropic). Without a key every AI-dependent decision is deferred (HOLD).
-  AI_PROVIDER: z.enum(["anthropic", "none"]).default("none"),
+  // AI manager. Provider list: src/ai/registry.ts (anthropic, openai, openrouter, google, groq,
+  // together, mistral, deepseek, xai, ollama, openai-compatible). Without one, AI decisions are deferred (HOLD).
+  AI_PROVIDER: z.string().default("none"),
   AI_API_KEY: z.string().optional(),
+  AI_BASE_URL: z.string().optional(),
   AI_MANAGER_MODEL: z.string().default("claude-opus-5"),
-  AI_SCREENER_MODEL: z.string().default("claude-haiku-4-5"),
+  AI_JSON_MODE: z.enum(["json_schema", "json_object"]).optional(),
+  // Price per million tokens (USD) for models not in the built-in table; unknown models are otherwise costed at a conservative maximum.
+  AI_PRICE_INPUT_PER_MTOK: z.string().optional().transform((v) => (v ? Number(v) : undefined)),
+  AI_PRICE_OUTPUT_PER_MTOK: z.string().optional().transform((v) => (v ? Number(v) : undefined)),
   AI_MONTHLY_BUDGET_ILS: num(60),
   OPS_MONTHLY_CAP_ILS: num(150),
   INFRA_MONTHLY_ESTIMATE_ILS: num(0),

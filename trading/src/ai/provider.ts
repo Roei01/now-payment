@@ -10,9 +10,19 @@ export interface StructuredCallResult {
   outputTokens: number;
 }
 
+export interface StructuredCallArgs {
+  model: string;
+  system: string;
+  user: string;
+  schema: Record<string, unknown>;
+  maxTokens: number;
+  effort: "low" | "medium" | "high";
+}
+
+/** One method is all a provider needs; see ai/registry.ts for the list of providers. */
 export interface AiProvider {
   readonly name: string;
-  structuredCall(args: { model: string; system: string; user: string; schema: Record<string, unknown>; maxTokens: number; effort: "low" | "medium" | "high" }): Promise<StructuredCallResult>;
+  structuredCall(args: StructuredCallArgs): Promise<StructuredCallResult>;
 }
 
 /** Anthropic Messages API with structured JSON output and server-side refusal fallback. */
@@ -23,7 +33,7 @@ export class AnthropicProvider implements AiProvider {
     this.client = new Anthropic({ apiKey, maxRetries: 2, timeout: 10 * 60_000 });
   }
 
-  async structuredCall(args: { model: string; system: string; user: string; schema: Record<string, unknown>; maxTokens: number; effort: "low" | "medium" | "high" }): Promise<StructuredCallResult> {
+  async structuredCall(args: StructuredCallArgs): Promise<StructuredCallResult> {
     try {
       const stream = this.client.beta.messages.stream({
         model: args.model,

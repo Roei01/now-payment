@@ -13,8 +13,16 @@ export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
 };
 const MOST_EXPENSIVE = { input: 10, output: 50 };
 
+const overrides: Record<string, { input: number; output: number }> = {};
+
+/** Registers the configured price of a model that is not in the built-in table. */
+export function setModelPrice(model: string, input: number, output: number): void {
+  overrides[model] = { input, output };
+}
+
 export function priceOf(model: string) {
-  return MODEL_PRICES[model] ?? MOST_EXPENSIVE; // unknown model => assume the most expensive (never under-count)
+  // Unknown model => assume the most expensive (never under-count spend).
+  return overrides[model] ?? MODEL_PRICES[model] ?? MOST_EXPENSIVE;
 }
 
 export function costUsd(model: string, inputTokens: number, outputTokens: number): number {
