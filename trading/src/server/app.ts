@@ -48,10 +48,19 @@ export async function buildApp(pool: pg.Pool, opts: { serveWeb?: boolean } = {})
 
   const webDir = path.resolve(here, "../../web/dist");
   if (opts.serveWeb !== false && fs.existsSync(webDir)) {
-    await app.register(fastifyStatic, { root: webDir, prefix: "/", wildcard: false });
+    await app.register(fastifyStatic, {
+      root: webDir,
+      prefix: "/",
+      setHeaders: (res, filePath) => {
+        // Hashed build assets never change; the shell and service worker must always revalidate.
+        // (@fastify/static passes the Fastify reply here.)
+        (res as unknown as { header(k: string, v: string): void }).header("Cache-Control", filePath.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable" : "no-cache");
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/")) return reply.code(404).send({ error: "not found" });
-      return reply.type("text/html").sendFile("index.html");
+      // Missing API routes and missing files are real 404s; only app routes get the SPA shell.
+      if (req.url.startsWith("/api/") || /\.[a-z0-9]+(\?.*)?$/i.test(req.url)) return reply.code(404).send({ error: "not found" });
+      return reply.type("text/html").header("Cache-Control", "no-cache").sendFile("index.html");
     });
   }
   return app;

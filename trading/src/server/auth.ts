@@ -160,6 +160,19 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
     return { authenticated: true, email: req.user.email, role: req.user.role, totpEnabled: req.user.totp_enabled, csrf: req.user.csrf_token };
   });
 
+  app.post("/api/auth/password", async (req, reply) => {
+    const u = requireUser(req);
+    const body = z.object({ current: z.string().min(1), next: z.string().min(12) }).parse(req.body);
+    const row = await maybeOne<{ password_hash: string }>(pool, "SELECT password_hash FROM users WHERE id = $1", [u.id]);
+    if (!row || !verifyPassword(body.current, row.password_hash)) throw new HttpError(403, "הסיסמה הנוכחית שגויה");
+    await query(pool, "UPDATE users SET password_hash = $2 WHERE id = $1", [u.id, hashPassword(body.next)]);
+    // Sign out every other session.
+    const token = req.cookies[SESSION_COOKIE];
+    await query(pool, "DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2", [u.id, token ? tokenHash(token) : ""]);
+    await audit(pool, u.email, "auth.password.changed", u.id, {}, req.ip);
+    return reply.send({ ok: true });
+  });
+
   app.post("/api/auth/totp/setup", async (req) => {
     const u = requireOwner(req);
     if (u.totp_enabled) throw new HttpError(409, "2FA already enabled");

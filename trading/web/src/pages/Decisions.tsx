@@ -1,237 +1,304 @@
-import { useState } from "react";
-import { Badge, Json, Loading, useApi } from "../components/ui";
-import { dt, he, num, pct, usd } from "../format";
+import { useEffect, useState } from "react";
+import { useTopbar } from "../App";
+import { Icon } from "../components/icons";
+import { Acc, Alert, Badge, Card, Code, Empty, KV, LoadError, PageSkeleton, RTable, SectionHead, Segmented, useApi } from "../components/ui";
+import { explain, t } from "../i18n";
+import { dt, num, pct, spct, usd } from "../format";
+
+type Filter = "" | "EXECUTED" | "REJECTED" | "DEFERRED" | "NO_ACTION";
 
 export function DecisionList() {
-  const [status, setStatus] = useState("");
-  const { data, error } = useApi<any[]>(`/api/decisions?limit=100${status ? `&status=${status}` : ""}`, [status]);
+  const [status, setStatus] = useState<Filter>("");
+  const { data, error, reload } = useApi<any[]>(`/api/decisions?limit=100${status ? `&status=${status}` : ""}`, { refreshMs: 60_000 });
   return (
-    <>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <select className="btn" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="סינון לפי סטטוס">
-          <option value="">כל הסטטוסים</option>
-          {["EXECUTED", "PARTIAL", "REJECTED", "DEFERRED", "NO_ACTION", "APPROVED"].map((s) => (
-            <option key={s} value={s}>
-              {he(s)}
-            </option>
-          ))}
-        </select>
-      </div>
-      {!data ? (
-        <Loading error={error} />
+    <div className="stack">
+      <Segmented<Filter>
+        label="סינון לפי סטטוס"
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: "", label: "הכול" },
+          { value: "EXECUTED", label: "בוצעו" },
+          { value: "REJECTED", label: "נדחו" },
+          { value: "DEFERRED", label: "לבירור" },
+          { value: "NO_ACTION", label: "ללא פעולה" },
+        ]}
+      />
+      {error && !data ? (
+        <LoadError error={error} retry={reload} />
+      ) : !data ? (
+        <PageSkeleton />
       ) : (
-        <div className="card">
-          {data.map((d) => (
-            <a key={d.id} href={`#/decision/${d.id}`} className="list-item">
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <span>
-                  <Badge value={d.status} /> {he(d.action)} · <span className="muted">{d.portfolio_name}</span>
-                </span>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {dt(d.created_at)}
-                </span>
-              </div>
-              <div className="muted" style={{ fontSize: 13 }}>
-                {d.rationale.slice(0, 180)}
-              </div>
-            </a>
-          ))}
-          {data.length === 0 && <span className="muted">אין החלטות.</span>}
-        </div>
+        <Card>
+          {data.length === 0 ? (
+            <Empty text="אין החלטות בסינון הזה." />
+          ) : (
+            <div className="list">
+              {data.map((d) => (
+                <a key={d.id} href={`#/decision/${d.id}`} className="list-row">
+                  <div className="list-main">
+                    <div className="row nowrap">
+                      <Badge value={d.status} />
+                      <span className="list-title">
+                        {t(d.action)} · {d.portfolio_name}
+                      </span>
+                    </div>
+                    <div className="list-sub mt-4">{d.rationale}</div>
+                  </div>
+                  <div className="list-meta">{dt(d.created_at)}</div>
+                  <Icon name="chevron" className="chev" />
+                </a>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
-    </>
+    </div>
+  );
+}
+
+function Step({ n, title, children, i }: { n: number; title: string; children: React.ReactNode; i: number }) {
+  return (
+    <Card
+      i={i}
+      title={
+        <span className="row nowrap">
+          <span className="badge info plain num">{n}</span>
+          {title}
+        </span>
+      }
+    >
+      {children}
+    </Card>
   );
 }
 
 export function DecisionTrace({ id }: { id: string }) {
-  const { data, error } = useApi<any>(`/api/decisions/${id}`, [id]);
-  if (!data) return <Loading error={error} />;
+  const { data, error, reload } = useApi<any>(`/api/decisions/${id}`);
+  const setTop = useTopbar();
+  useEffect(() => {
+    if (data) setTop({ sub: `${data.decision.portfolio_name} · ${dt(data.decision.created_at)}` });
+  }, [data]);
+  if (error && !data) return <LoadError error={error} retry={reload} />;
+  if (!data) return <PageSkeleton />;
   const { decision: d, cycle, signals, riskChecks, orders, forecasts, prompt } = data;
   const ai = d.ai_output;
+
   return (
-    <>
-      <div className="card">
-        <h2>
-          <span>
-            {he(d.action)} · {d.portfolio_name}
-          </span>
+    <div className="stack">
+      <Card i={0}>
+        <div className="card-head">
+          <div className="grow">
+            <h3>{t(d.action)}</h3>
+            <div className="desc">
+              {d.strategy_code ?? "—"} · גרסה {d.strategy_version ?? "—"} · מדיניות <span className="ltr">{d.policy_version}</span>
+            </div>
+          </div>
           <Badge value={d.status} />
-        </h2>
-        <p style={{ marginTop: 0 }}>{d.rationale}</p>
-        <div className="muted" style={{ fontSize: 12 }}>
-          {dt(d.created_at)} · אסטרטגיה {d.strategy_code ?? "—"} v{d.strategy_version ?? "—"} · מדיניות {d.policy_version}
-          {d.model_version ? ` · מודל ${d.model_version}` : ""}
-          {d.valid_until ? ` · בתוקף עד ${dt(d.valid_until)}` : ""}
         </div>
-      </div>
+        <p className="wrap-any">{d.rationale}</p>
+        {d.model_version && <p className="small muted mt-8">מודל: <span className="ltr">{d.model_version}</span>{d.valid_until ? ` · בתוקף עד ${dt(d.valid_until)}` : ""}</p>}
+      </Card>
 
-      <div className="section-title">1. הנתונים שהיו זמינים</div>
-      <div className="card">
+      <SectionHead title="מסלול ההחלטה" hint="מהנתונים ועד הביצוע" />
+
+      <Step n={1} title="הנתונים שהיו זמינים" i={1}>
         {cycle ? (
-          <table>
-            <tbody>
-              <tr><th>ספק</th><td className="ltr">{cycle.provider} ({cycle.feed}){cycle.simulated ? " — SIMULATED" : ""}</td></tr>
-              <tr><th>נכון ל־</th><td>{dt(cycle.data_as_of)}</td></tr>
-              <tr><th>נקלט</th><td>{dt(cycle.ingested_at)}</td></tr>
-              <tr><th>סטטוס נתונים</th><td><Badge value={cycle.batch_status} text={cycle.batch_status} /></td></tr>
-              <tr><th>שוק</th><td>{cycle.market_open ? "פתוח" : "סגור"}</td></tr>
-              <tr><th>שער USD/ILS</th><td className="ltr">{cycle.stats?.fx?.rate} ({cycle.stats?.fx?.source})</td></tr>
-            </tbody>
-          </table>
+          <KV
+            rows={[
+              ["ספק", <span className="ltr">{`${cycle.provider} (${cycle.feed})${cycle.simulated ? " · מדומה" : ""}`}</span>],
+              ["נכון ל־", dt(cycle.data_as_of)],
+              ["סטטוס נתונים", <Badge value={cycle.batch_status} />],
+              ["שוק", cycle.market_open ? "פתוח" : "סגור"],
+              ["שער דולר/שקל", <span className="num">{cycle.stats?.fx?.rate ?? "—"}</span>],
+            ]}
+          />
         ) : (
-          <span className="muted">אין מחזור משויך.</span>
+          <Empty text="אין מחזור משויך." />
         )}
-        {d.evidence?.sources && (
-          <>
-            <h3>מקורות שסופקו למודל</h3>
-            <table>
-              <tbody>
-                {d.evidence.sources.map((s: any) => (
-                  <tr key={s.id}>
-                    <td className="ltr" style={{ fontSize: 11 }}>{s.id}</td>
-                    <td>{s.kind}</td>
-                    <td className="muted">{s.title}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
+        {d.evidence?.sources?.length > 0 && (
+          <Acc summary={<span className="small">מקורות שסופקו למודל ({d.evidence.sources.length})</span>}>
+            <div className="list">
+              {d.evidence.sources.map((s: any) => (
+                <div className="list-row" key={s.id}>
+                  <div className="list-main">
+                    <div className="list-title">{s.title}</div>
+                    <div className="list-sub ltr" style={{ textAlign: "right" }}>
+                      {s.kind} · {s.id}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Acc>
         )}
-      </div>
+      </Step>
 
-      <div className="section-title">2. אותות</div>
-      <div className="card table-wrap">
-        <table>
-          <tbody>
-            {signals.map((s: any, i: number) => (
-              <tr key={i}>
-                <td className="ltr">{s.symbol ?? "—"}</td>
-                <td>{s.kind}</td>
-                <td className="num">{s.value === null ? "" : num(s.value, 4)}</td>
-                <td className="muted ltr" style={{ fontSize: 11 }}>{JSON.stringify(s.payload)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {signals.length === 0 && <span className="muted">אין אותות.</span>}
-        <h3>ראיות</h3>
-        <Json value={d.evidence} />
-      </div>
+      <Step n={2} title="אותות האסטרטגיה" i={2}>
+        <RTable
+          rowKey={(_r: any, i) => String(i)}
+          rows={signals}
+          empty="אין אותות במחזור זה."
+          columns={[
+            { key: "s", label: "נייר", primary: true, render: (r: any) => <span className="ltr">{r.symbol ?? "—"}</span> },
+            { key: "k", label: "אות", render: (r: any) => <span className="ltr xsmall">{r.kind}</span> },
+            { key: "v", label: "ערך", render: (r: any) => <span className="num">{r.value === null ? "—" : num(r.value, 4)}</span> },
+          ]}
+        />
+        <Acc summary={<span className="small">ראיות מלאות</span>}>
+          <Code value={d.evidence} />
+        </Acc>
+      </Step>
 
       {ai && (
-        <>
-          <div className="section-title">3. פלט מנהל ההשקעות (AI)</div>
-          <div className="card">
-            {ai.valuation && (
-              <table>
-                <tbody>
-                  <tr><th>המלצה</th><td>{he(ai.action)} ({ai.confidence_label} — תווית מילולית, לא הסתברות)</td></tr>
-                  <tr><th>טווח שווי למניה</th><td className="num">{usd(ai.valuation.per_share_low)} – {usd(ai.valuation.per_share_base)} – {usd(ai.valuation.per_share_high)}</td></tr>
-                  <tr><th>שיטה</th><td>{ai.valuation.method}</td></tr>
-                  <tr><th>תרחישים</th><td className="num">דובי {usd(ai.scenarios.bear.price)} · בסיס {usd(ai.scenarios.base.price)} · שורי {usd(ai.scenarios.bull.price)}</td></tr>
-                  <tr><th>מחיר קנייה מרבי</th><td className="num">{usd(ai.max_buy_price)}</td></tr>
-                  <tr><th>חשיפת יעד</th><td className="num">{num(ai.target_exposure_pct, 1)}%</td></tr>
-                  <tr><th>אופק</th><td>{ai.horizon_days} ימים</td></tr>
-                  <tr><th>ביטול תזה</th><td>{(ai.thesis_invalidation ?? []).join(" · ")}</td></tr>
-                  <tr><th>מידע חסר</th><td>{(ai.missing_material_information ?? []).join(" · ") || "—"}</td></tr>
-                </tbody>
-              </table>
-            )}
-            <h3>ראיות בעד / נגד</h3>
-            <ul>
-              {(ai.evidence_for ?? []).map((e: any, i: number) => <li key={`f${i}`} className="good">{e.claim} <span className="muted ltr">[{e.source_id}]</span></li>)}
-              {(ai.evidence_against ?? []).map((e: any, i: number) => <li key={`a${i}`} className="bad">{e.claim} <span className="muted ltr">[{e.source_id}]</span></li>)}
-            </ul>
-            <details>
-              <summary>פלט מלא</summary>
-              <Json value={ai} />
-            </details>
-            {prompt && (
-              <details>
-                <summary>גרסת פרומפט {prompt.prompt_hash.slice(0, 10)} ({prompt.model})</summary>
-                <pre className="json">{prompt.prompt_text}</pre>
-              </details>
-            )}
-          </div>
-        </>
+        <Step n={3} title="מנהל ההשקעות (AI)" i={3}>
+          {ai.valuation ? (
+            <>
+              <KV
+                rows={[
+                  ["המלצה", `${t(ai.action)} · ביטחון ${ai.confidence_label === "high" ? "גבוה" : ai.confidence_label === "medium" ? "בינוני" : "נמוך"} (תווית, לא הסתברות)`],
+                  ["טווח שווי למניה", <span className="num">{`${usd(ai.valuation.per_share_low)} – ${usd(ai.valuation.per_share_base)} – ${usd(ai.valuation.per_share_high)}`}</span>],
+                  ["שיטה", ai.valuation.method],
+                  ["תרחישים", <span className="num">{`שלילי ${usd(ai.scenarios.bear.price)} · בסיס ${usd(ai.scenarios.base.price)} · חיובי ${usd(ai.scenarios.bull.price)}`}</span>],
+                  ["מחיר קנייה מרבי", <span className="num">{usd(ai.max_buy_price)}</span>],
+                  ["חשיפת יעד", <span className="num">{num(ai.target_exposure_pct, 1)}%</span>],
+                  ["אופק", `${ai.horizon_days} ימים`],
+                ]}
+              />
+              <div className="grid cols-2 mt-12">
+                <div>
+                  <div className="small good" style={{ fontWeight: 700 }}>
+                    בעד
+                  </div>
+                  <ul className="small" style={{ paddingInlineStart: 18, margin: "6px 0" }}>
+                    {(ai.evidence_for ?? []).map((e: any, i: number) => (
+                      <li key={i}>{e.claim}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div className="small bad" style={{ fontWeight: 700 }}>
+                    נגד
+                  </div>
+                  <ul className="small" style={{ paddingInlineStart: 18, margin: "6px 0" }}>
+                    {(ai.evidence_against ?? []).map((e: any, i: number) => (
+                      <li key={i}>{e.claim}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              {(ai.thesis_invalidation ?? []).length > 0 && (
+                <Alert tone="info" title="תנאים לביטול התזה">
+                  {ai.thesis_invalidation.join(" · ")}
+                </Alert>
+              )}
+            </>
+          ) : (
+            <Empty text="המודל לא החזיר הערכה תקפה." />
+          )}
+          <Acc summary={<span className="small">פלט מלא</span>}>
+            <Code value={ai} />
+          </Acc>
+          {prompt && (
+            <Acc summary={<span className="small">גרסת פרומפט <span className="ltr">{prompt.prompt_hash.slice(0, 10)}</span></span>}>
+              <Code value={prompt.prompt_text} />
+            </Acc>
+          )}
+        </Step>
       )}
 
-      <div className="section-title">4. בדיקות סיכון</div>
-      <div className="card">
-        {riskChecks.map((r: any) => (
-          <div key={r.id} className="list-item">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="ltr">
-                {r.proposal.side} {num(r.proposal.qty, 6)} {r.proposal.symbol} ({r.proposal.orderType})
-              </span>
-              <Badge value={r.result === "ALLOW" ? "OK" : r.result === "RESIZE" ? "WARNING" : "FAILED"} text={r.result} />
-            </div>
-            {r.reasons.map((x: any, i: number) => (
-              <div key={i} className="muted" style={{ fontSize: 13 }}>
-                <span className="ltr">{x.code}</span>: {x.message}
+      <Step n={ai ? 4 : 3} title="שער הסיכון" i={4}>
+        {riskChecks.length === 0 ? (
+          <Empty text="לא הוצעה פקודה, לכן לא נדרשה בדיקת סיכון." icon="shield" />
+        ) : (
+          <div className="list">
+            {riskChecks.map((r: any) => (
+              <div key={r.id} className="list-row">
+                <div className="list-main">
+                  <div className="row between nowrap">
+                    <span className="list-title">
+                      {t(r.proposal.side)} <span className="ltr">{r.proposal.symbol}</span> · <span className="num">{num(r.proposal.qty, 6)}</span>
+                    </span>
+                    <Badge value={r.result} />
+                  </div>
+                  {r.reasons.map((x: any, i: number) => (
+                    <div key={i} className="small mt-4">
+                      <strong>{t(x.code)}</strong> <span className="muted">— {explain(x.message)}</span>
+                    </div>
+                  ))}
+                  {r.metrics?.estimatedWorstLossFromInitialPct && (
+                    <div className="xsmall muted mt-4">
+                      הפסד מוערך בתרחיש הגרוע ({t(r.metrics.worstScenario)}): {pct(r.metrics.estimatedWorstLossFromInitialPct, 1)} מההון
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
-            {r.metrics?.estimatedWorstLossFromInitialPct && (
-              <div style={{ fontSize: 12 }}>
-                הפסד מוערך בתרחיש הגרוע ({r.metrics.worstScenario}): {pct(r.metrics.estimatedWorstLossFromInitialPct, 1)} מההון ההתחלתי
-              </div>
-            )}
           </div>
-        ))}
-        {riskChecks.length === 0 && <span className="muted">לא נדרשה בדיקת סיכון (אין פקודה מוצעת).</span>}
-      </div>
+        )}
+      </Step>
 
-      <div className="section-title">5. פקודות וביצוע</div>
-      <div className="card">
-        {orders.map((o: any) => (
-          <div key={o.id} className="list-item">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="ltr">
-                {o.side} {num(o.qty, 6)} {o.symbol} @ {o.order_type === "LIMIT" ? usd(o.limit_price) : "MKT"}
-              </span>
-              <Badge value={o.status} text={o.status} />
-            </div>
-            <div className="muted ltr" style={{ fontSize: 11 }}>client_order_id: {o.client_order_id} · {o.venue}</div>
-            <div style={{ fontSize: 12 }}>
-              {(o.events ?? []).map((e: any) => (
-                <div key={e.id} className="muted">
-                  {dt(e.occurred_at)} · {e.event_type}
+      <Step n={ai ? 5 : 4} title="פקודות וביצוע" i={5}>
+        {orders.length === 0 ? (
+          <Empty text="לא נשלחו פקודות." />
+        ) : (
+          <div className="list">
+            {orders.map((o: any) => (
+              <div key={o.id} className="list-row">
+                <div className="list-main">
+                  <div className="row between nowrap">
+                    <span className="list-title">
+                      {t(o.side)} <span className="ltr">{o.symbol}</span> · <span className="num">{num(o.qty, 6)}</span> · {o.order_type === "LIMIT" ? <>לימיט <span className="num">{usd(o.limit_price)}</span></> : "שוק"}
+                    </span>
+                    <Badge value={o.status} />
+                  </div>
+                  <div className="xsmall muted mt-4">
+                    {t(o.venue)} · <span className="ltr">{o.client_order_id}</span>
+                  </div>
+                  <div className="mt-8 small">
+                    {(o.events ?? []).map((e: any) => (
+                      <div key={e.id} className="muted">
+                        {dt(e.occurred_at)} · {t(e.event_type)}
+                      </div>
+                    ))}
+                    {(o.fills ?? []).map((f: any) => (
+                      <div key={f.id}>
+                        מילוי: <span className="num">{num(f.qty, 6)}</span> ב־<span className="num">{usd(f.price)}</span> (עמלה <span className="num">{usd(f.fee, 4)}</span>)
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-              {(o.fills ?? []).map((f: any) => (
-                <div key={f.id}>
-                  מילוי: {num(f.qty, 6)} @ {usd(f.price)} (עמלה {usd(f.fee, 4)})
-                </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        ))}
-        {orders.length === 0 && <span className="muted">לא נשלחו פקודות.</span>}
-      </div>
+        )}
+      </Step>
 
       {forecasts.length > 0 && (
-        <>
-          <div className="section-title">6. תחזית ותוצאה</div>
-          <div className="card table-wrap">
-            <table>
-              <thead>
-                <tr><th>נייר</th><th>מחיר בתחזית</th><th>אופק</th><th>יעד</th><th>תוצאה</th></tr>
-              </thead>
-              <tbody>
-                {forecasts.map((f: any) => (
-                  <tr key={f.id}>
-                    <td className="ltr">{f.symbol}</td>
-                    <td className="num">{usd(f.price_at_forecast)}</td>
-                    <td>{f.horizon_days} ימים</td>
-                    <td>{dt(f.due_at)}</td>
-                    <td>{f.outcome ? `${f.outcome.classification} (${pct(f.outcome.excess_return_pct)} מול מדד)` : "טרם הבשילה"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <Step n={ai ? 6 : 5} title="תחזית מול תוצאה" i={6}>
+          <RTable
+            rowKey={(r: any) => r.id}
+            rows={forecasts}
+            columns={[
+              { key: "s", label: "נייר", primary: true, render: (r: any) => <span className="ltr">{r.symbol ?? "—"}</span> },
+              { key: "p", label: "מחיר בתחזית", render: (r: any) => <span className="num">{usd(r.price_at_forecast)}</span> },
+              { key: "h", label: "יבשיל ב־", render: (r: any) => dt(r.due_at) },
+              {
+                key: "o",
+                label: "תוצאה",
+                render: (r: any) =>
+                  r.outcome ? (
+                    <span>
+                      {t(r.outcome.classification)} · <span className="num">{spct(r.outcome.excess_return_pct)}</span>
+                    </span>
+                  ) : (
+                    <span className="muted">טרם הבשילה</span>
+                  ),
+              },
+            ]}
+          />
+        </Step>
       )}
-    </>
+    </div>
   );
 }

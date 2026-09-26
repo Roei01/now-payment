@@ -43,7 +43,7 @@ export const ValueDiscountAi: Strategy = {
     return {
       targets: null,
       signals,
-      rationale: candidates.length ? `${candidates.length} candidate(s) for AI review` : "No candidates passed the screen",
+      rationale: candidates.length ? `${candidates.length} מועמדים לבדיקת מנהל ההשקעות` : "אף מניה לא עברה את הסינון",
       evidence: { held, lastTradeDaysAgo: ctx.lastTradeAt ? tradingDaysBetween(ctx.lastTradeAt, ctx.snapshot.asOf) : null },
       aiCandidates: candidates,
     };

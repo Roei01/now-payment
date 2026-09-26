@@ -248,7 +248,7 @@ async function handleAiCandidate(
     policyVersion: ctx.policy.version,
   };
   if (res.status === "DEFERRED" || !res.decision) {
-    await insertDecision(pool, { ...common, action: "HOLD", status: "DEFERRED", rationale: `Deferred: ${res.reason}`, evidence });
+    await insertDecision(pool, { ...common, action: "HOLD", status: "DEFERRED", rationale: `נדחה לבירור: ${res.reason}`, evidence });
     return { decisions: 1, orders: 0, aiCalled: res.costIls > 0 };
   }
   const d = res.decision;
@@ -260,7 +260,7 @@ async function handleAiCandidate(
   // Code rule: price at/above the model's high value is "expensive" → sell holdings regardless of the verbal call.
   if (pos && price >= d.valuation.per_share_high && action !== "SELL") {
     action = "SELL";
-    codeNotes.push(`price ${price.toFixed(2)} ≥ valuation high ${d.valuation.per_share_high} → sell rule`);
+    codeNotes.push(`המחיר ${price.toFixed(2)} הגיע לקצה העליון של טווח השווי ${d.valuation.per_share_high} — כלל מכירה`);
   }
   const decisionId = await insertDecision(pool, {
     ...common,
@@ -308,7 +308,7 @@ async function handleAiCandidate(
     if (!(limit > 0) || ask > limit) {
       await query(pool, "UPDATE decisions SET status = 'NO_ACTION', rationale = rationale || $2 WHERE id = $1", [
         decisionId,
-        ` | code: ask ${ask.toFixed(2)} above margin-of-safety limit ${limit.toFixed(2)} (base ${d.valuation.per_share_base} × (1 − ${p.marginOfSafety}))`,
+        ` | בדיקת קוד: מחיר ${ask.toFixed(2)} מעל גבול מרווח הביטחון ${limit.toFixed(2)} (שווי בסיס ${d.valuation.per_share_base} × (1 − ${p.marginOfSafety})) — אין קנייה`,
       ]);
       return { decisions: 1, orders: 0, aiCalled: true };
     }
@@ -517,7 +517,7 @@ export async function runCycle(deps: CycleDeps, now: Date = new Date()): Promise
             action: "HOLD",
             status: "NO_ACTION",
             dataAsOf: snapshot.asOf,
-            rationale: out.aiCandidates.length ? `${out.rationale}; no AI review due this cycle (recent review or market closed)` : out.rationale,
+            rationale: out.aiCandidates.length ? `${out.rationale}; לא נדרשה בדיקת AI במחזור זה (נבדק לאחרונה או שהשוק סגור)` : out.rationale,
             evidence: { ...out.evidence, candidates: out.aiCandidates },
             policyVersion: policy.version,
           });

@@ -1,140 +1,218 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { api } from "../api";
-import type { Me } from "../App";
-import { Badge, Loading, Stat, useApi } from "../components/ui";
-import { ago, dt, he, ils, pct, signClass, usd } from "../format";
+import { useTopbar, type Me } from "../App";
+import { Icon } from "../components/icons";
+import { useUI, REASON_FIELD } from "../components/overlay";
+import { Alert, Badge, Card, Kpi, LoadError, PageSkeleton, Progress, SectionHead, useApi } from "../components/ui";
+import { t } from "../i18n";
+import { ago, dt, ils, pct, signClass, spct, usd } from "../format";
 
-export function KillSwitchButton({ active, me, onDone }: { active: boolean; me: Me; onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-  if (me.role !== "owner" || active) return null;
-  return (
-    <button
-      className="btn danger"
-      disabled={busy}
-      onClick={async () => {
-        const reason = prompt("סיבת עצירת החירום (תיעצר שליחת פקודות חדשות; פוזיציות לא יימכרו):");
-        if (!reason) return;
-        setBusy(true);
-        try {
-          await api("/api/control/kill-switch", { method: "POST", body: { active: true, reason } });
-          onDone();
-        } catch (e) {
-          alert((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      ⛔ עצירת חירום
-    </button>
-  );
+export function useKillSwitch(onDone: () => void) {
+  const ui = useUI();
+  return () =>
+    ui.form({
+      title: "עצירת חירום",
+      description: "תיעצר שליחת כל פקודה חדשה בכל התיקים. פוזיציות קיימות לא יימכרו. שחרור דורש אימות דו־שלבי.",
+      fields: [REASON_FIELD],
+      submitLabel: "עצירה מיידית",
+      tone: "danger",
+      onSubmit: async (v) => {
+        await api("/api/control/kill-switch", { method: "POST", body: { active: true, reason: v.reason } });
+        ui.toast("עצירת החירום הופעלה", "bad");
+        onDone();
+      },
+    });
 }
 
 export function Overview({ me }: { me: Me }) {
-  const { data, error, reload } = useApi<any>("/api/overview");
-  if (!data) return <Loading error={error} />;
+  const { data, error, reload } = useApi<any>("/api/overview", { refreshMs: 60_000 });
+  const setTop = useTopbar();
+  const kill = useKillSwitch(reload);
+
+  useEffect(() => {
+    if (!data) return;
+    const c = data.system.lastCycle;
+    setTop({
+      sub: c ? `עודכן ${ago(c.started_at)} · השוק ${c.market_open ? "פתוח" : "סגור"}` : "טרם רץ מחזור",
+      action:
+        me.role === "owner" && !data.system.killSwitch.active ? (
+          <button className="btn danger-soft sm" onClick={kill}>
+            <Icon name="stop" />
+            <span>עצירת חירום</span>
+          </button>
+        ) : undefined,
+    });
+  }, [data]);
+
+  if (error && !data) return <LoadError error={error} retry={reload} />;
+  if (!data) return <PageSkeleton />;
   const { portfolios, system, budget } = data;
+  const paper = portfolios.filter((p: any) => p.kind === "PAPER");
   const bench = portfolios.find((p: any) => p.kind === "BENCHMARK");
-  const benchRet = bench?.perf?.net_return_pct;
+  const live = portfolios.find((p: any) => p.kind === "LIVE");
+  const benchRet = bench?.perf ? Number(bench.perf.net_return_pct) : null;
   const simulated = String(system.integrations.marketData).startsWith("SIMULATED");
-  const heartbeatAge = system.workerHeartbeat ? (Date.now() - new Date(system.workerHeartbeat).getTime()) / 60000 : Infinity;
+  const hbAge = system.workerHeartbeat ? (Date.now() - new Date(system.workerHeartbeat).getTime()) / 60000 : Infinity;
+  const totalUsd = paper.reduce((a: number, p: any) => a + Number(p.perf?.value_usd ?? 0), 0);
+  const totalIls = paper.reduce((a: number, p: any) => a + Number(p.perf?.value_ils ?? 0), 0);
+  const startIls = paper.reduce((a: number, p: any) => a + Number(p.initial_capital_ils ?? 0), 0);
 
   return (
-    <>
+    <div className="stack">
       {system.killSwitch.active && (
-        <div className="banner bad">
-          <strong>עצירת חירום פעילה</strong> — {system.killSwitch.reason} ({system.killSwitch.by}, {dt(system.killSwitch.at)}). אין פקודות חדשות; שחרור במסך תפעול עם 2FA.
-        </div>
+        <Alert tone="bad" title="עצירת חירום פעילה" icon="stop">
+          {system.killSwitch.reason} · {dt(system.killSwitch.at)}. לא נשלחות פקודות חדשות. שחרור במסך תפעול.
+        </Alert>
       )}
       {simulated && (
-        <div className="banner warn">
-          <strong>נתוני שוק מדומים.</strong> המחירים אינם אמיתיים והתוצאות לא ייחשבו בשער הקידום. חבר מפתחות Alpaca כדי לעבור לנתונים אמיתיים.
-        </div>
+        <Alert tone="warn" title="נתוני שוק מדומים">
+          המחירים אינם אמיתיים והתוצאות לא ייחשבו לקידום. חברו מפתחות Alpaca כדי לעבור לנתונים אמיתיים.
+        </Alert>
       )}
-      {heartbeatAge > 10 && <div className="banner warn">ה־worker לא דיווח {Number.isFinite(heartbeatAge) ? ago(system.workerHeartbeat) : "מעולם"} — מחזורי מסחר לא רצים.</div>}
+      {hbAge > 10 && (
+        <Alert tone="warn" title="מנוע הרקע לא פעיל">
+          דיווח אחרון {Number.isFinite(hbAge) ? ago(system.workerHeartbeat) : "— מעולם לא"}. מחזורי המסחר לא רצים.
+        </Alert>
+      )}
       {system.openIncidents.length > 0 && (
-        <div className="banner warn">
-          {system.openIncidents.length} תקלות פתוחות — <a href="#/ops">למסך תפעול</a>
-        </div>
+        <a href="#/ops" style={{ color: "inherit" }}>
+          <Alert tone="warn" title={`${system.openIncidents.length} תקלות פתוחות`}>
+            {t(system.openIncidents[0].kind)}: {system.openIncidents[0].message}
+          </Alert>
+        </a>
       )}
 
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-        <span className="muted" style={{ fontSize: 12 }}>
-          מחזור אחרון: {system.lastCycle ? `${dt(system.lastCycle.started_at)} · ${system.lastCycle.status} · שוק ${system.lastCycle.market_open ? "פתוח" : "סגור"}` : "טרם רץ"}
-        </span>
-        <KillSwitchButton active={system.killSwitch.active} me={me} onDone={reload} />
-      </div>
+      <Card i={0}>
+        <div className="row between" style={{ alignItems: "flex-end" }}>
+          <div className="grow">
+            <div className="muted small">שווי כולל — שלושת תיקי הדמה</div>
+            <div className="hero-value num mt-4">{ils(totalIls)}</div>
+            <div className="small muted num mt-4">
+              {usd(totalUsd)} · הון התחלתי {ils(startIls, 0)}
+            </div>
+          </div>
+          <div style={{ textAlign: "end" }}>
+            <div className={`num ${signClass(totalIls - startIls)}`} style={{ fontSize: 20, fontWeight: 750 }}>
+              {startIls ? spct(totalIls / startIls - 1) : "—"}
+            </div>
+            <div className="xsmall muted">תשואה בשקלים</div>
+          </div>
+        </div>
+      </Card>
 
-      <div className="grid two">
-        {portfolios.map((p: any) => {
+      <SectionHead title="תיקי דמה" hint="לחצו על תיק לפרטים" />
+      <div className="grid auto">
+        {[...paper, bench].filter(Boolean).map((p: any, i: number) => {
           const perf = p.perf;
-          const excess = perf && benchRet !== undefined && p.kind !== "BENCHMARK" ? Number(perf.net_return_pct) - Number(benchRet) : null;
+          const excess = perf && benchRet !== null && p.kind !== "BENCHMARK" ? Number(perf.net_return_pct) - benchRet : null;
           return (
-            <a key={p.id} href={`#/portfolio/${p.id}`} className="card" style={{ color: "inherit" }}>
-              <h2>
-                <span>{p.name}</span>
-                <span className="row">
-                  {p.kind === "LIVE" && <span className="badge">לייב</span>}
-                  <Badge value={p.status} />
-                </span>
-              </h2>
-              {p.kind === "LIVE" && !perf ? (
-                <p className="muted" style={{ margin: 0 }}>
-                  התיק החי רדום. לא נשלחות ממנו פקודות עד מעבר שער הקידום, מדיניות חתומה והפעלה מפורשת. <br />
-                  <span style={{ fontSize: 12 }}>אסטרטגיה: {p.strategy_code ?? "טרם שויכה"}</span>
-                </p>
-              ) : (
-                <>
-                  <div className="stats">
-                    <Stat label="שווי" value={usd(perf?.value_usd)} sub={<span className="num">{ils(perf?.value_ils)}</span>} />
-                    <Stat label="תשואה נטו ($)" value={pct(perf?.net_return_pct)} className={signClass(perf?.net_return_pct)} sub={<span className="num">₪ {pct(perf?.return_ils_pct)}</span>} />
-                    <Stat label={p.kind === "BENCHMARK" ? "מזומן" : "מול מדד ייחוס"} value={p.kind === "BENCHMARK" ? usd(perf?.cash_usd) : pct(excess)} className={p.kind === "BENCHMARK" ? "" : signClass(excess)} />
-                    <Stat label="הפסד מההון / מהשיא" value={`${pct(perf?.loss_from_initial_pct, 1)} / ${pct(perf?.drawdown_pct, 1)}`} sub={`יעד סיכון ${pct(p.risk_budget_pct, 0)}`} />
+            <a key={p.id} href={`#/portfolio/${p.id}`} className="card" style={{ ["--i" as string]: i + 1 }}>
+              <div className="card-head">
+                <div className="grow">
+                  <h3>{p.name}</h3>
+                  <div className="desc">
+                    {p.strategy_name ?? "—"} · גרסה {p.strategy_version ?? "—"}
                   </div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                    {p.strategy_name ?? "—"} v{p.strategy_version ?? "—"} · מזומן {usd(perf?.cash_usd)} · מושקע {pct(perf?.invested_pct, 0)} · {p.execution_venue === "INTERNAL_SIM" ? "סימולטור פנימי" : p.execution_venue}
-                    {perf?.simulated_data ? " · נתונים מדומים" : ""}
+                </div>
+                <Badge value={p.status} />
+              </div>
+              <div className="row between nowrap">
+                <div className="grow">
+                  <div className="num" style={{ fontSize: 24, fontWeight: 800 }}>
+                    {ils(perf?.value_ils)}
                   </div>
-                  {p.last_decision && (
-                    <div style={{ fontSize: 13, marginTop: 8 }}>
-                      <Badge value={p.last_decision.status} /> {he(p.last_decision.action)} — <span className="muted">{p.last_decision.rationale.slice(0, 110)}</span>
-                    </div>
-                  )}
-                </>
+                  <div className="xsmall muted num">{usd(perf?.value_usd)}</div>
+                </div>
+                <div style={{ textAlign: "end" }}>
+                  <div className={`num ${signClass(perf?.net_return_pct)}`} style={{ fontWeight: 750 }}>
+                    {spct(perf?.net_return_pct)}
+                  </div>
+                  <div className="xsmall muted">{p.kind === "BENCHMARK" ? "תשואה" : <>מול מדד <span className={`num ${signClass(excess)}`}>{spct(excess)}</span></>}</div>
+                </div>
+              </div>
+              <div className="divider" />
+              <div className="kpis">
+                <Kpi label="הפסד מההון" value={pct(perf?.loss_from_initial_pct, 1)} sub={`יעד סיכון ${pct(p.risk_budget_pct, 0)}`} />
+                <Kpi label="ירידה מהשיא" value={pct(perf?.drawdown_pct, 1)} sub={`מושקע ${pct(perf?.invested_pct, 0)}`} />
+              </div>
+              {p.last_decision && (
+                <div className="row nowrap mt-12 small" style={{ alignItems: "flex-start" }}>
+                  <Badge value={p.last_decision.status} />
+                  <span className="muted grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t(p.last_decision.action)} · {p.last_decision.rationale}
+                  </span>
+                </div>
               )}
             </a>
           );
         })}
       </div>
 
-      <div className="section-title">בריאות מערכת ועלויות</div>
-      <div className="grid two">
-        <div className="card">
-          <h2>חיבורים</h2>
-          <table>
-            <tbody>
-              {Object.entries(system.integrations).map(([k, v]) => (
-                <tr key={k}>
-                  <th>{k}</th>
-                  <td className="ltr" style={{ textAlign: "left" }}>
-                    {String(v)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="card">
-          <h2>עלויות תפעול החודש</h2>
-          <div className="stats">
-            <Stat label="AI" value={ils(budget.monthAiIls)} sub={`מתוך ${ils(budget.aiBudgetIls, 0)}`} />
-            <Stat label="סה״כ (כולל הערכת תשתית)" value={ils(budget.monthTotalIls)} sub={`תקרה ${ils(budget.opsCapIls, 0)}`} className={budget.remainingOpsIls < budget.opsCapIls * 0.2 ? "warn" : ""} />
+      {live && (
+        <a href="#/live" className="card" style={{ ["--i" as string]: 5 }}>
+          <div className="card-head">
+            <div className="grow">
+              <h3>{live.name}</h3>
+              <div className="desc">{live.strategy_name ? `${live.strategy_name} · גרסה ${live.strategy_version}` : "טרם שויכה אסטרטגיה"}</div>
+            </div>
+            <Badge value={live.status} live={live.status === "PILOT" || live.status === "ACTIVE"} />
           </div>
-          <p className="muted" style={{ fontSize: 12 }}>
-            עלויות אמיתיות, נפרדות מהון הדמה. בחריגה צפויה נדחות החלטות AI חדשות; בקרות סיכון ופיוס ממשיכים.
+          <p className="small muted">
+            {live.perf
+              ? `שווי ${usd(live.perf.value_usd)} · תשואה ${spct(live.perf.net_return_pct)}`
+              : "לא נשלחות פקודות עד מעבר שער הקידום, מדיניות חתומה והפעלה מפורשת שלכם."}
           </p>
-        </div>
+        </a>
+      )}
+
+      <SectionHead title="עלויות ומערכת" />
+      <div className="grid cols-2">
+        <Card title="עלויות תפעול החודש" desc="כסף אמיתי, נפרד מהון הדמה" i={6}>
+          <div className="stack" style={{ gap: 12 }}>
+            <div>
+              <div className="row between small">
+                <span>סה״כ (כולל שרת)</span>
+                <span className="num">
+                  {ils(budget.monthTotalIls)} / {ils(budget.opsCapIls, 0)}
+                </span>
+              </div>
+              <div className="mt-8">
+                <Progress value={budget.monthTotalIls} max={budget.opsCapIls} />
+              </div>
+            </div>
+            <div>
+              <div className="row between small">
+                <span>מודלי AI</span>
+                <span className="num">
+                  {ils(budget.monthAiIls)} / {ils(budget.aiBudgetIls, 0)}
+                </span>
+              </div>
+              <div className="mt-8">
+                <Progress value={budget.monthAiIls} max={budget.aiBudgetIls} />
+              </div>
+            </div>
+          </div>
+        </Card>
+        <Card title="חיבורים" desc="מצב השירותים החיצוניים" i={7} action={<a className="btn sm" href="#/ops">פרטים</a>}>
+          <div className="list">
+            {(["marketData", "ai", "email"] as const).map((k) => {
+              const v = String(system.integrations[k]);
+              const ok = !/SIMULATED|not configured|off \(/.test(v);
+              return (
+                <div className="list-row" key={k}>
+                  <div className="list-main">
+                    <div className="list-title">{t(k)}</div>
+                    <div className="list-sub ltr" style={{ textAlign: "right" }}>
+                      {v}
+                    </div>
+                  </div>
+                  <Badge value={ok ? "OK" : "WARNING"} text={ok ? "מחובר" : "חסר"} />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       </div>
-    </>
+    </div>
   );
 }

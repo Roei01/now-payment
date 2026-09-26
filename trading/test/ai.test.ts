@@ -116,7 +116,7 @@ describe("AI manager", () => {
     const p = (await listPortfolios(pool)).find((x) => x.code === "PAPER-3")!;
     const d = await maybeOne(pool, "SELECT status, rationale FROM decisions WHERE portfolio_id = $1 ORDER BY created_at DESC LIMIT 1", [p.id]);
     expect(d.status).toBe("NO_ACTION");
-    expect(d.rationale).toMatch(/margin-of-safety/);
+    expect(d.rationale).toMatch(/מרווח הביטחון/);
     const f = await maybeOne(pool, "SELECT value_base FROM forecast_snapshots WHERE portfolio_id = $1", [p.id]);
     expect(Number(f.value_base)).toBeGreaterThan(0); // the forecast is stored before any outcome
   });

@@ -34,10 +34,10 @@ export const STRATEGY_SEEDS: StrategySeed[] = [
       universe: ["SPY", "QQQ", "IWM", "EFA", "VWO", "TLT", "IEF", "GLD", "SHY"],
       horizonDays: 30,
       rules: {
-        entry: "6-month momentum (skip last week) > 0 and price above 200-day SMA; top 2 by momentum",
-        exit: "asset drops out of top 2 or below its 200-day SMA at a monthly rebalance",
-        sizing: "40% each, remainder up to 60% in SHY, rest cash",
-        rebalance: "every 21 trading days or when drift > 10%",
+        entry: "מומנטום חצי שנתי (ללא השבוע האחרון) חיובי ומחיר מעל ממוצע 200 יום; שתי הקרנות החזקות ביותר",
+        exit: "קרן שיוצאת משתי המובילות או יורדת מתחת לממוצע 200 יום, בבדיקת האיזון החודשית",
+        sizing: "40% לכל קרן, יתרה עד 60% ב־SHY, והשאר מזומן",
+        rebalance: "כל 21 ימי מסחר, או כשהסטייה עולה על 10%",
       },
       requiresAi: false,
     },
@@ -50,7 +50,7 @@ export const STRATEGY_SEEDS: StrategySeed[] = [
       params: { targets: { VTI: 0.4, BND: 0.35, GLD: 0.1, SHY: 0.1 }, driftBand: 0.05 },
       universe: ["VTI", "BND", "GLD", "SHY"],
       horizonDays: 90,
-      rules: { allocation: "VTI 40%, BND 35%, GLD 10%, SHY 10%, cash 5%", rebalance: "any weight drifts by more than 5 percentage points" },
+      rules: { allocation: "VTI ‏40%, BND ‏35%, GLD ‏10%, SHY ‏10%, מזומן 5%", rebalance: "כשמשקל כלשהו סוטה ביותר מ־5 נקודות אחוז" },
       requiresAi: false,
     },
   },
@@ -64,11 +64,11 @@ export const STRATEGY_SEEDS: StrategySeed[] = [
       universe: ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "JNJ", "PG", "KO", "JPM", "XOM"],
       horizonDays: 180,
       rules: {
-        screen: "price ≥15% below 52-week high (candidate only)",
-        entry: "AI valuation with sources; limit price ≤ base value × (1 − 20%) and ≤ AI max buy price",
-        exit: "price ≥ AI high value, thesis invalidated, or risk policy requires",
-        sizing: "AI target exposure capped at 20% per position; risk engine may reduce",
-        noData: "missing material data → decision deferred (HOLD)",
+        screen: "מחיר נמוך ב־15% לפחות מהשיא השנתי — מועמדת לבדיקה בלבד, לא אות קנייה",
+        entry: "הערכת שווי של מנהל ה־AI עם מקורות; מחיר לימיט עד שווי הבסיס פחות 20% ולא מעל מחיר הקנייה המרבי",
+        exit: "מחיר בקצה העליון של טווח השווי, שבירת התזה, או דרישת מדיניות הסיכון",
+        sizing: "חשיפת היעד של המודל, עד 20% לנייר; מנוע הסיכון רשאי להקטין",
+        noData: "חסר מידע מהותי ← ההחלטה נדחית (החזקה)",
       },
       requiresAi: true,
     },
@@ -77,7 +77,7 @@ export const STRATEGY_SEEDS: StrategySeed[] = [
     code: "BENCHMARK_HOLD",
     name: "מדד ייחוס פסיבי (SPY)",
     description: "קנה והחזק SPY להשוואה בלבד. אינו מועמד לקידום.",
-    version: { params: { symbol: "SPY", weight: 0.99 }, universe: ["SPY"], horizonDays: 365, rules: { hold: "buy once, hold" }, requiresAi: false },
+    version: { params: { symbol: "SPY", weight: 0.99 }, universe: ["SPY"], horizonDays: 365, rules: { hold: "קנייה חד־פעמית והחזקה" }, requiresAi: false },
   },
 ];
 
@@ -92,7 +92,7 @@ export async function seedStrategies(db: Db): Promise<void> {
     await query(
       db,
       `INSERT INTO strategy_versions (strategy_id, version, params, universe, horizon_days, rules, requires_ai, change_reason, created_by)
-       VALUES ($1, 1, $2, $3, $4, $5, $6, 'initial version', 'seed') ON CONFLICT (strategy_id, version) DO NOTHING`,
+       VALUES ($1, 1, $2, $3, $4, $5, $6, 'גרסה ראשונה', 'seed') ON CONFLICT (strategy_id, version) DO NOTHING`,
       [st!.id, JSON.stringify(s.version.params), s.version.universe, s.version.horizonDays, JSON.stringify(s.version.rules), s.version.requiresAi],
     );
   }

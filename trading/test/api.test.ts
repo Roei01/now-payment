@@ -72,6 +72,12 @@ describe("API security", () => {
     for (const u of ["/api/strategies", "/api/live", "/api/operations", "/api/assets", "/api/audit", "/api/decisions"]) expect((await call("GET", u)).statusCode).toBe(200);
   });
 
+  it("changes the password only with the current one", async () => {
+    expect((await call("POST", "/api/auth/password", { current: "wrong-password", next: "another-long-password" }, { "x-csrf-token": csrf })).statusCode).toBe(403);
+    expect((await call("POST", "/api/auth/password", { current: "long-password-123", next: "short" }, { "x-csrf-token": csrf })).statusCode).toBe(400);
+    expect((await call("POST", "/api/auth/password", { current: "long-password-123", next: "long-password-123" }, { "x-csrf-token": csrf })).statusCode).toBe(200);
+  });
+
   it("locks out after repeated failed logins", async () => {
     for (let i = 0; i < 5; i++) await app.inject({ method: "POST", url: "/api/auth/login", payload: { email: "o@x.io", password: "nope" } });
     expect((await app.inject({ method: "POST", url: "/api/auth/login", payload: { email: "o@x.io", password: "nope" } })).statusCode).toBe(429);

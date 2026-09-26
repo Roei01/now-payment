@@ -85,20 +85,20 @@ export async function runManager(
 ): Promise<ManagerResult> {
   const { candidate, asset, snapshot, state, valuation, version } = args;
   const sources: ManagerResult["sources"] = [];
-  if (!deps.provider) return { status: "DEFERRED", reason: "AI provider not configured (AI_PROVIDER/AI_API_KEY)", sources, costIls: 0 };
+  if (!deps.provider) return { status: "DEFERRED", reason: "ספק AI לא מוגדר (AI_PROVIDER / AI_API_KEY)", sources, costIls: 0 };
 
   const quote = snapshot.quotes.get(asset.symbol);
   const bars = snapshot.bars.get(asset.symbol) ?? [];
-  if (!quote || bars.length < 200) return { status: "DEFERRED", reason: "insufficient price data", sources, costIls: 0 };
+  if (!quote || bars.length < 200) return { status: "DEFERRED", reason: "אין מספיק נתוני מחיר", sources, costIls: 0 };
 
   let fundamentals;
   try {
     fundamentals = await fundamentalsArtifact(db, deps.edgar, asset, snapshot.asOf);
   } catch (err) {
-    return { status: "DEFERRED", reason: `fundamentals unavailable: ${errMsg(err)}`, sources, costIls: 0 };
+    return { status: "DEFERRED", reason: `דוחות החברה לא זמינים: ${errMsg(err)}`, sources, costIls: 0 };
   }
   if (!fundamentals || Object.keys(fundamentals.snapshot.annual).length < 3)
-    return { status: "DEFERRED", reason: "material fundamentals missing (SEC EDGAR not configured or incomplete)", sources, costIls: 0 };
+    return { status: "DEFERRED", reason: "חסרים נתוני דוחות מהותיים (SEC EDGAR לא מוגדר או חלקי)", sources, costIls: 0 };
 
   const priceSourceId = `price:${snapshot.batchId}:${asset.symbol}`;
   sources.push({ id: priceSourceId, kind: "MARKET_DATA", title: `${snapshot.provider} quote + daily bars`, published_at: quote.publishedAt.toISOString() });
@@ -156,7 +156,7 @@ export async function runManager(
   const worstUsd = costUsd(deps.model, estInputTokens, maxTokens);
   const worstIls = worstUsd * snapshot.fx.rate;
   const reserve = await reserveAiSpend(db, deps.budget, worstIls);
-  if (!reserve.ok) return { status: "DEFERRED", reason: `budget: ${reserve.reason}`, sources, costIls: 0 };
+  if (!reserve.ok) return { status: "DEFERRED", reason: `תקציב: ${reserve.reason === "AI monthly budget would be exceeded" ? "תקרת ה־AI החודשית תיחרג" : "תקרת התפעול החודשית תיחרג"}`, sources, costIls: 0 };
 
   const pvId = await promptVersion(db, deps.model);
   const res = await deps.provider.structuredCall({
@@ -180,13 +180,13 @@ export async function runManager(
     });
   const costIls = usd * snapshot.fx.rate;
   const base = { promptVersionId: pvId, model: res.modelServed, sources, costIls };
-  if (!res.ok) return { status: "DEFERRED", reason: res.refusal ? `model refused: ${res.refusal}` : `model call failed: ${res.error}`, ...base };
+  if (!res.ok) return { status: "DEFERRED", reason: res.refusal ? `המודל סירב: ${res.refusal}` : `קריאה למודל נכשלה: ${res.error}`, ...base };
 
   const parsed = ManagerDecisionSchema.safeParse(res.json);
-  if (!parsed.success) return { status: "DEFERRED", reason: `output contract violated: ${parsed.error.issues.slice(0, 3).map((i) => i.message).join("; ")}`, raw: res.json, ...base };
+  if (!parsed.success) return { status: "DEFERRED", reason: `הפלט לא עמד בחוזה: ${parsed.error.issues.slice(0, 3).map((i) => i.message).join("; ")}`, raw: res.json, ...base };
   const semantic = checkDecisionSemantics(parsed.data, new Set(sources.map((s) => s.id)), asset.symbol);
-  if (!semantic.ok) return { status: "DEFERRED", reason: `output rejected: ${semantic.problems.join("; ")}`, decision: parsed.data, ...base };
+  if (!semantic.ok) return { status: "DEFERRED", reason: `הפלט נפסל: ${semantic.problems.join("; ")}`, decision: parsed.data, ...base };
   if (parsed.data.action === "BUY" && parsed.data.missing_material_information.length > 0)
-    return { status: "DEFERRED", reason: `model reports missing material information: ${parsed.data.missing_material_information.join("; ")}`, decision: parsed.data, ...base };
+    return { status: "DEFERRED", reason: `המודל מדווח על מידע מהותי חסר: ${parsed.data.missing_material_information.join("; ")}`, decision: parsed.data, ...base };
   return { status: "DECIDED", reason: parsed.data.thesis, decision: parsed.data, ...base };
 }

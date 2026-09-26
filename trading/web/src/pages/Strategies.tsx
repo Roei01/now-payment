@@ -1,239 +1,296 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { Me } from "../App";
-import { Badge, Json, Loading, useApi } from "../components/ui";
-import { dt, pct, usd } from "../format";
+import { Icon } from "../components/icons";
+import { useUI } from "../components/overlay";
+import { Acc, Alert, Badge, Card, Code, Empty, Kpi, KV, LoadError, PageSkeleton, RTable, SectionHead, useApi } from "../components/ui";
+import { t } from "../i18n";
+import { day, pct, signClass, spct, usd } from "../format";
 
-function BacktestForm({ versions, onDone }: { versions: { id: string; label: string }[]; onDone: () => void }) {
+const RULE_LABELS: Record<string, string> = {
+  entry: "כניסה",
+  exit: "יציאה",
+  sizing: "גודל פוזיציה",
+  rebalance: "איזון",
+  allocation: "הקצאה",
+  screen: "סינון",
+  noData: "כשחסר מידע",
+  hold: "החזקה",
+};
+
+function BacktestCard({ versions, onDone }: { versions: { id: string; label: string }[]; onDone: () => void }) {
   const [versionId, setVersionId] = useState(versions[0]?.id ?? "");
   const [start, setStart] = useState("2025-01-01");
   const [end, setEnd] = useState(new Date().toISOString().slice(0, 10));
   const [split, setSplit] = useState("DEV");
   const [result, setResult] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setResult(await api("/api/backtests", { method: "POST", body: { strategyVersionId: versionId, start, end, split } }));
+      onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const s = result?.summary;
   return (
-    <div className="card">
-      <h2>הרצת Backtest</h2>
-      <div className="field">
-        <label>גרסה</label>
-        <select value={versionId} onChange={(e) => setVersionId(e.target.value)}>
-          {versions.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="row">
-        <div className="field" style={{ flex: 1 }}>
-          <label>מתאריך</label>
-          <input className="ltr" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+    <Card title="הרצת בדיקה היסטורית (Backtest)" desc="ללא מידע עתידי; עסקה בפתיחת היום שאחרי האות. אסטרטגיות AI אינן נבדקות היסטורית.">
+      <div className="form-grid two">
+        <div className="field">
+          <label htmlFor="bt-v">גרסת אסטרטגיה</label>
+          <select id="bt-v" className="select" value={versionId} onChange={(e) => setVersionId(e.target.value)}>
+            {versions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="field" style={{ flex: 1 }}>
-          <label>עד תאריך</label>
-          <input className="ltr" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+        <div className="field">
+          <label htmlFor="bt-s">חלוקה</label>
+          <select id="bt-s" className="select" value={split} onChange={(e) => setSplit(e.target.value)}>
+            <option value="DEV">פיתוח — 70% הראשונים</option>
+            <option value="TEST">בדיקה — 30% האחרונים (לא לכיול)</option>
+            <option value="FULL">כל הטווח</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="bt-a">מתאריך</label>
+          <input id="bt-a" className="input ltr" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="bt-b">עד תאריך</label>
+          <input id="bt-b" className="input ltr" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
         </div>
       </div>
-      <div className="field">
-        <label>חלוקה</label>
-        <select value={split} onChange={(e) => setSplit(e.target.value)}>
-          <option value="DEV">פיתוח (70% הראשונים)</option>
-          <option value="TEST">בדיקה (30% האחרונים — לא לכיול)</option>
-          <option value="FULL">מלא</option>
-        </select>
+      <div className="actions mt-16">
+        <button className="btn primary" onClick={run} disabled={busy || !versionId}>
+          {busy ? <span className="spinner" /> : <Icon name="play" />}
+          הרצה
+        </button>
       </div>
-      <button
-        className="btn primary"
-        disabled={busy || !versionId}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            setResult(await api("/api/backtests", { method: "POST", body: { strategyVersionId: versionId, start, end, split } }));
-            onDone();
-          } catch (e) {
-            setResult({ error: (e as Error).message });
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        הרצה
-      </button>
-      {result && <Json value={result} />}
-    </div>
+      {err && (
+        <div className="mt-12">
+          <Alert tone="bad">{err}</Alert>
+        </div>
+      )}
+      {s && (
+        <div className="kpis four mt-16">
+          <Kpi label="תשואה" value={spct(s.totalReturn)} className={signClass(s.totalReturn)} sub={`${s.start} → ${s.end}`} />
+          <Kpi label="מדד ייחוס" value={spct(s.benchmarkReturn)} sub={`פער ${spct(s.excessReturn)}`} />
+          <Kpi label="ירידה מרבית" value={pct(s.maxDrawdown, 1)} sub={`תנודתיות ${pct(s.annualVol, 1)}`} />
+          <Kpi label="עסקאות" value={s.trades} sub={`עמלות ${usd(s.fees, 3)}`} />
+        </div>
+      )}
+    </Card>
   );
 }
 
 export function Strategies({ me }: { me: Me }) {
   const { data, error, reload } = useApi<any>("/api/strategies");
-  const [lesson, setLesson] = useState("");
-  if (!data) return <Loading error={error} />;
+  const ui = useUI();
+  if (error && !data) return <LoadError error={error} retry={reload} />;
+  if (!data) return <PageSkeleton />;
   const { strategies, assignments, gates, backtests, experiments, versionWindows, lessons, forecastStats, gatePolicy } = data;
   const allVersions = strategies.flatMap((s: any) => (s.versions ?? []).map((v: any) => ({ ...v, code: s.code, name: s.name })));
   const vLabel = (id: string) => {
     const v = allVersions.find((x: any) => x.id === id);
-    return v ? `${v.code} v${v.version}` : id.slice(0, 8);
+    return v ? `${v.name} · גרסה ${v.version}` : id.slice(0, 8);
   };
+  const owner = me.role === "owner";
+
+  const addLesson = () =>
+    ui.form({
+      title: "לקח מחקר חדש",
+      description: "לקח נשמר כמועמד ולא משפיע על החלטות עד שתאשרו אותו.",
+      fields: [
+        { name: "text", label: "הלקח", type: "textarea", required: true },
+        { name: "tags", label: "תגיות", help: "סימול, ענף או קוד אסטרטגיה, מופרדים בפסיק", ltr: true },
+        { name: "valid", label: "מתי הלקח תקף", type: "textarea" },
+      ],
+      submitLabel: "שמירה",
+      onSubmit: async (v) => {
+        await api("/api/lessons", {
+          method: "POST",
+          body: { text: v.text, tags: (v.tags ?? "").split(",").map((x) => x.trim()).filter(Boolean), validityConditions: v.valid || undefined },
+        });
+        ui.toast("הלקח נשמר כמועמד");
+        reload();
+      },
+    });
 
   return (
-    <>
-      <div className="banner">
-        השוואה הוגנת: שלושת תיקי הדמה מתחילים באותו הון, באותו חלון ובאותן הנחות עלות. כשמחליפים שיטה בתיק, ההון וההפסדים נשמרים וחלונות גרסה שונים אינם ניסוי מקביל.
-      </div>
-      {strategies.map((s: any) => {
-        const active = assignments.filter((a: any) => !a.unassigned_at && (s.versions ?? []).some((v: any) => v.id === a.strategy_version_id));
-        return (
-          <div key={s.id} className="card" style={{ marginBottom: 12 }}>
-            <h2>
-              <span>{s.name}</span>
-              <span className="badge ltr">{s.code}</span>
-            </h2>
-            <p className="muted" style={{ marginTop: 0 }}>{s.description}</p>
-            <div style={{ fontSize: 13 }}>פעילה ב: {active.map((a: any) => a.portfolio_code).join(", ") || "—"}</div>
-            {(s.versions ?? []).map((v: any) => {
-              const windows = versionWindows.filter((w: any) => w.strategy_version_id === v.id);
-              const g = gates.filter((x: any) => x.strategy_version_id === v.id);
-              const fs = forecastStats.find((f: any) => f.strategy_version_id === v.id);
-              return (
-                <details key={v.id} style={{ marginTop: 10 }} open={v.version === s.versions.length}>
-                  <summary>
-                    גרסה {v.version} · {dt(v.created_at)} · {v.change_reason} {v.requires_ai ? "· דורש AI" : ""}
-                  </summary>
-                  <h3>חוקים</h3>
-                  <table>
-                    <tbody>
-                      {Object.entries(v.rules).map(([k, val]) => (
-                        <tr key={k}>
-                          <th className="ltr">{k}</th>
-                          <td>{String(val)}</td>
-                        </tr>
-                      ))}
-                      <tr>
-                        <th>יקום</th>
-                        <td className="ltr">{v.universe.join(", ")}</td>
-                      </tr>
-                      <tr>
-                        <th>אופק</th>
-                        <td>{v.horizon_days} ימים</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <details>
-                    <summary>פרמטרים</summary>
-                    <Json value={v.params} />
-                  </details>
-                  <h3>חלונות ביצועים לפי גרסה (forward paper)</h3>
-                  {windows.map((w: any) => (
-                    <div key={w.portfolio_id} style={{ fontSize: 13 }}>
-                      {w.start} → {w.end} · {w.days} ימים · {usd(w.start_value)} → {usd(w.end_value)} ({pct(Number(w.end_value) / Number(w.start_value) - 1)})
-                    </div>
-                  ))}
-                  {windows.length === 0 && <div className="muted" style={{ fontSize: 13 }}>טרם רצה בדמה.</div>}
-                  {fs && (
-                    <div style={{ fontSize: 13 }}>
-                      תחזיות: {fs.forecasts} · הבשילו {fs.matured} · נתמכו {fs.supported} · נסתרו {fs.contradicted}
-                    </div>
-                  )}
-                  {g.map((x: any) => (
-                    <div key={x.id} style={{ fontSize: 13 }}>
-                      שער קידום ({x.portfolio_code}): <Badge value={x.decision} /> {dt(x.evaluated_at)}
-                    </div>
-                  ))}
-                </details>
-              );
-            })}
-          </div>
-        );
-      })}
+    <div className="stack">
+      <Alert tone="info" title="השוואה הוגנת">
+        שלושת תיקי הדמה מתחילים באותו הון, באותו חלון זמן ובאותן הנחות עלות. החלפת שיטה בתיק לא מאפסת הון או הפסדים; ביצועים נמדדים גם לפי חלון הגרסה.
+      </Alert>
 
-      <div className="section-title">תנאי שער הקידום (ערכי דיון — לא סופיים)</div>
-      <div className="card">
-        <Json value={gatePolicy} />
-      </div>
-
-      {me.role === "owner" && <BacktestForm versions={allVersions.filter((v: any) => !v.requires_ai).map((v: any) => ({ id: v.id, label: `${v.code} v${v.version}` }))} onDone={reload} />}
-
-      <div className="section-title">Backtests</div>
-      <div className="card table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>גרסה</th>
-              <th>חלוקה</th>
-              <th>טווח</th>
-              <th>תשואה</th>
-              <th>מדד</th>
-              <th>DD</th>
-              <th>עסקאות</th>
-            </tr>
-          </thead>
-          <tbody>
-            {backtests.map((b: any) => (
-              <tr key={b.id}>
-                <td className="ltr">{vLabel(b.strategy_version_id)}</td>
-                <td>{b.split}{b.simulated_data ? " (מדומה)" : ""}</td>
-                <td className="ltr">{b.start_date} → {b.end_date}</td>
-                <td className="num">{pct(b.summary.totalReturn)}</td>
-                <td className="num">{pct(b.summary.benchmarkReturn)}</td>
-                <td className="num">{pct(b.summary.maxDrawdown)}</td>
-                <td className="num">{b.summary.trades}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {backtests.length === 0 && <span className="muted">אין הרצות.</span>}
-      </div>
-
-      <div className="section-title">ניסויים (כולל כושלים)</div>
-      <div className="card">
-        {experiments.map((e: any) => (
-          <div key={e.id} className="list-item">
-            <Badge value={e.status} text={e.status} /> {vLabel(e.strategy_version_id)} — {e.hypothesis}
-          </div>
-        ))}
-        {experiments.length === 0 && <span className="muted">אין ניסויים רשומים.</span>}
-      </div>
-
-      <div className="section-title">לקחי מחקר</div>
-      <div className="card">
-        {lessons.map((l: any) => (
-          <div key={l.id} className="list-item">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span>
-                <Badge value={l.status === "APPROVED" ? "OK" : "WARNING"} text={l.status} /> {l.text}
-              </span>
-              {me.role === "owner" && l.status !== "APPROVED" && (
-                <button className="btn" onClick={() => api(`/api/lessons/${l.id}`, { method: "PATCH", body: { status: "APPROVED" } }).then(reload)}>
-                  אישור
-                </button>
+      <div className="grid cols-2">
+        {strategies.map((s: any, i: number) => {
+          const versions = s.versions ?? [];
+          const latest = versions.at(-1);
+          const active = assignments.filter((a: any) => !a.unassigned_at && versions.some((v: any) => v.id === a.strategy_version_id));
+          return (
+            <Card key={s.id} i={i} title={s.name} desc={s.description} action={latest?.requires_ai ? <Badge value="INFO" text="AI" plain /> : undefined}>
+              <div className="row small">
+                <span className="muted">פעילה ב:</span>
+                {active.length ? active.map((a: any) => <span key={a.portfolio_id} className="badge plain">{a.portfolio_code}</span>) : <span className="muted">—</span>}
+              </div>
+              {latest && (
+                <div className="mt-12">
+                  <KV
+                    rows={[
+                      ...Object.entries(latest.rules).map(([k, v]) => [RULE_LABELS[k] ?? k, String(v)] as [string, string]),
+                      ["יקום נכסים", <span className="ltr">{latest.universe.join(", ")}</span>],
+                      ["אופק", `${latest.horizon_days} ימים`],
+                    ]}
+                  />
+                </div>
               )}
-            </div>
-            <div className="muted" style={{ fontSize: 12 }}>
-              מדגם {l.sample_size} · תגיות {l.tags.join(", ")} {l.validity_conditions ? `· תקף כאשר: ${l.validity_conditions}` : ""}
-            </div>
-          </div>
-        ))}
-        {me.role === "owner" && (
-          <div style={{ marginTop: 10 }}>
-            <div className="field">
-              <label>לקח חדש (מועמד — לא הופך לחוק עד אישור)</label>
-              <textarea rows={2} value={lesson} onChange={(e) => setLesson(e.target.value)} />
-            </div>
-            <button
-              className="btn"
-              disabled={lesson.length < 10}
-              onClick={async () => {
-                const tags = prompt("תגיות (סימול/ענף/קוד אסטרטגיה, מופרדות בפסיק):") ?? "";
-                await api("/api/lessons", { method: "POST", body: { text: lesson, tags: tags.split(",").map((t) => t.trim()).filter(Boolean) } });
-                setLesson("");
-                reload();
-              }}
-            >
-              הוספה
-            </button>
+              <div className="mt-8">
+                {versions
+                  .slice()
+                  .reverse()
+                  .map((v: any) => {
+                    const windows = versionWindows.filter((w: any) => w.strategy_version_id === v.id);
+                    const g = gates.filter((x: any) => x.strategy_version_id === v.id);
+                    const fs = forecastStats.find((f: any) => f.strategy_version_id === v.id);
+                    return (
+                      <Acc key={v.id} summary={<span className="small"><strong>גרסה {v.version}</strong> · {day(v.created_at)} · {v.change_reason}</span>}>
+                        <div className="stack" style={{ gap: 10 }}>
+                          {windows.length === 0 ? (
+                            <span className="small muted">טרם רצה בדמה.</span>
+                          ) : (
+                            windows.map((w: any) => (
+                              <div key={w.portfolio_id} className="small">
+                                חלון דמה: {w.start} → {w.end} · {w.days} ימים ·{" "}
+                                <span className={`num ${signClass(Number(w.end_value) / Number(w.start_value) - 1)}`}>{spct(Number(w.end_value) / Number(w.start_value) - 1)}</span>
+                              </div>
+                            ))
+                          )}
+                          {fs && (
+                            <div className="small muted">
+                              תחזיות {fs.forecasts} · הבשילו {fs.matured} · נתמכו {fs.supported} · נסתרו {fs.contradicted}
+                            </div>
+                          )}
+                          {g.map((x: any) => (
+                            <div key={x.id} className="row small">
+                              שער קידום ({x.portfolio_code}): <Badge value={x.decision} />
+                            </div>
+                          ))}
+                          <Code value={v.params} />
+                        </div>
+                      </Acc>
+                    );
+                  })}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {owner && <BacktestCard versions={allVersions.filter((v: any) => !v.requires_ai).map((v: any) => ({ id: v.id, label: `${v.name} · גרסה ${v.version}` }))} onDone={reload} />}
+
+      <SectionHead title="בדיקות היסטוריות" />
+      <Card>
+        <RTable
+          rowKey={(r: any) => r.id}
+          rows={backtests}
+          empty="עוד לא הורצו בדיקות."
+          columns={[
+            { key: "v", label: "גרסה", primary: true, render: (r: any) => vLabel(r.strategy_version_id) },
+            { key: "s", label: "חלוקה", render: (r: any) => <span>{t(r.split)}{r.simulated_data ? " · מדומה" : ""}</span> },
+            { key: "r", label: "תשואה", render: (r: any) => <span className={`num ${signClass(r.summary.totalReturn)}`}>{spct(r.summary.totalReturn)}</span> },
+            { key: "b", label: "מדד", render: (r: any) => <span className="num">{spct(r.summary.benchmarkReturn)}</span> },
+            { key: "d", label: "ירידה מרבית", render: (r: any) => <span className="num">{pct(r.summary.maxDrawdown, 1)}</span> },
+            { key: "t", label: "עסקאות", render: (r: any) => <span className="num">{r.summary.trades}</span> },
+          ]}
+        />
+      </Card>
+
+      <SectionHead title="ניסויים" hint="כולל ניסויים שנכשלו" />
+      <Card>
+        {experiments.length === 0 ? (
+          <Empty text="אין ניסויים רשומים." />
+        ) : (
+          <div className="list">
+            {experiments.map((e: any) => (
+              <div key={e.id} className="list-row">
+                <div className="list-main">
+                  <div className="list-title">{e.hypothesis}</div>
+                  <div className="list-sub">{vLabel(e.strategy_version_id)}</div>
+                </div>
+                <Badge value={e.status} />
+              </div>
+            ))}
           </div>
         )}
-      </div>
-    </>
+      </Card>
+
+      <SectionHead title="לקחי מחקר" hint="לקח משפיע רק אחרי אישור" />
+      <Card
+        action={
+          owner ? (
+            <button className="btn sm" onClick={addLesson}>
+              <Icon name="plus" /> לקח חדש
+            </button>
+          ) : undefined
+        }
+        title="זיכרון מחקר"
+      >
+        {lessons.length === 0 ? (
+          <Empty text="אין לקחים עדיין." />
+        ) : (
+          <div className="list">
+            {lessons.map((l: any) => (
+              <div key={l.id} className="list-row">
+                <div className="list-main">
+                  <div className="list-title">{l.text}</div>
+                  <div className="list-sub">
+                    מדגם {l.sample_size}
+                    {l.tags.length ? ` · ${l.tags.join(", ")}` : ""}
+                    {l.validity_conditions ? ` · תקף כאשר: ${l.validity_conditions}` : ""}
+                  </div>
+                </div>
+                {owner && l.status === "CANDIDATE" ? (
+                  <button
+                    className="btn sm"
+                    onClick={async () => {
+                      await api(`/api/lessons/${l.id}`, { method: "PATCH", body: { status: "APPROVED" } });
+                      ui.toast("הלקח אושר");
+                      reload();
+                    }}
+                  >
+                    אישור
+                  </button>
+                ) : (
+                  <Badge value={l.status === "APPROVED" ? "OK" : l.status} text={t(l.status === "APPROVED" ? "APPROVED" : l.status)} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Acc summary={<span className="small muted">תנאי שער הקידום (ערכי דיון, לא סופיים)</span>}>
+        <KV
+          rows={[
+            ["ימי מסחר בדמה", gatePolicy.minForwardDays],
+            ["מינימום עסקאות", gatePolicy.minTrades],
+            ["ירידה מרבית", pct(gatePolicy.maxDrawdown, 0)],
+            ["הפסד מרבי מההון", pct(gatePolicy.maxLossFromInitial, 0)],
+            ["רמת מובהקות", `${gatePolicy.alpha} (מתוקן לריבוי ניסויים)`],
+            ["כיסוי נתונים", pct(gatePolicy.minDataCoverage, 0)],
+            ["נתונים אמיתיים בלבד", gatePolicy.requireRealData ? "כן" : "לא"],
+          ]}
+        />
+      </Acc>
+    </div>
   );
 }

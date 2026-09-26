@@ -51,8 +51,8 @@ export const TrendRotation: Strategy = {
       targets: act ? targets : null,
       signals,
       rationale: act
-        ? `Rotation: ${chosen.map((c) => `${c.symbol} (${(c.mom * 100).toFixed(1)}%)`).join(", ") || "no asset above trend"}; max drift ${(maxDrift * 100).toFixed(1)}%`
-        : `No rebalance due (last trade ${ctx.lastTradeAt?.toISOString().slice(0, 10) ?? "never"}, drift ${(maxDrift * 100).toFixed(1)}%)`,
+        ? `רוטציה: ${chosen.map((c) => `${c.symbol} (${(c.mom * 100).toFixed(1)}%)`).join(", ") || "אין נכס מעל קו המגמה — מעבר להגנה"}; סטייה מרבית ${(maxDrift * 100).toFixed(1)}%`
+        : `לא הגיע מועד איזון (עסקה אחרונה ${ctx.lastTradeAt?.toISOString().slice(0, 10) ?? "אין"}, סטייה ${(maxDrift * 100).toFixed(1)}%)`,
       evidence: { ranking: scored, due, maxDrift },
     };
   },

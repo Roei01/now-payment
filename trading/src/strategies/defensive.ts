@@ -19,7 +19,7 @@ export const DefensiveRebalance: Strategy = {
       targets: act ? targets : null,
       signals,
       rebalanceByDesign: true,
-      rationale: act ? `Drift ${(maxDrift * 100).toFixed(1)}% exceeds band ${(p.driftBand * 100).toFixed(0)}%` : `Within band (max drift ${(maxDrift * 100).toFixed(1)}%)`,
+      rationale: act ? `סטייה של ${(maxDrift * 100).toFixed(1)}% מההקצאה, מעל הרצועה של ${(p.driftBand * 100).toFixed(0)}% — איזון` : `בתוך הרצועה (סטייה מרבית ${(maxDrift * 100).toFixed(1)}%) — אין צורך באיזון`,
       evidence: { maxDrift, band: p.driftBand },
     };
   },
@@ -36,7 +36,7 @@ export const BenchmarkHold: Strategy = {
       targets: act ? new Map([[p.symbol, p.weight]]) : null,
       signals: [{ symbol: p.symbol, kind: "BENCHMARK_WEIGHT", value: w }],
       rebalanceByDesign: true,
-      rationale: act ? `Invest idle cash into ${p.symbol}` : "Holding benchmark",
+      rationale: act ? `השקעת מזומן פנוי ב־${p.symbol}` : "מחזיקים את מדד הייחוס",
       evidence: { weight: w },
     };
   },
