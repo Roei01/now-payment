@@ -2,11 +2,12 @@ import { loadConfig, setConfigForTests } from "../src/config.js";
 import { getPool, closePool } from "../src/db/pool.js";
 import { migrate } from "../src/db/migrate.js";
 
-export const TEST_DB = process.env.TEST_DATABASE_URL ?? "postgres://postgres@127.0.0.1:5433/trading_test";
+/** Read lazily so a test file can set TEST_DATABASE_URL at its top (ESM imports are hoisted). */
+export const testDb = () => process.env.TEST_DATABASE_URL ?? "postgres://postgres@127.0.0.1:5433/trading_test";
 
 export function testConfig(overrides: Record<string, string> = {}) {
   const cfg = loadConfig({
-    DATABASE_URL: TEST_DB,
+    DATABASE_URL: testDb(),
     APP_SECRET: "test-secret-test-secret-test-secret-000",
     SETUP_TOKEN: "setup-token",
     NODE_ENV: "test",

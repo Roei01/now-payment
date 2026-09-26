@@ -388,6 +388,10 @@ export async function runCycle(deps: CycleDeps, now: Date = new Date()): Promise
           notes.push(`${portfolio.code}: unknown strategy ${version.code}`);
           continue;
         }
+        if (portfolio.kind !== "LIVE" && !portfolio.initial_capital_usd) {
+          notes.push(`${portfolio.code}: waiting for starting capital (FX rate unavailable)`);
+          continue;
+        }
         // A run is bound to the data source it started on. Never continue (or silently reset) on another source.
         if (portfolio.data_source && portfolio.data_source !== deps.market.name) {
           await openIncident(pool, {

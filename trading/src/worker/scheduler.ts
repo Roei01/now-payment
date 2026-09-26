@@ -13,6 +13,7 @@ import { refreshEligibility } from "../live/stateMachine.js";
 import { listPortfolios } from "../portfolio/state.js";
 import { reconcileOrders } from "../execution/orders.js";
 import { config } from "../config.js";
+import { bootstrap, hasUnfundedPortfolios } from "../setup/bootstrap.js";
 
 async function timed(deps: CycleDeps, job: string, fn: () => Promise<Record<string, unknown> | void>) {
   const id = await startJob(deps.pool, job);
@@ -31,6 +32,7 @@ export async function tick(deps: CycleDeps, now: Date = new Date()): Promise<voi
   const { pool } = deps;
   const c = config();
   await beat(pool, "worker", { at: now.toISOString() });
+  if (await hasUnfundedPortfolios(pool)) await bootstrap(pool, deps.fx, deps.market.name).catch((err) => log.warn("bootstrap retry failed", { error: errMsg(err) }));
   let clock;
   try {
     clock = await deps.market.getClock(now);
