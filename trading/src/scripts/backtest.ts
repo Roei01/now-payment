@@ -8,7 +8,7 @@ import { runStoredBacktest } from "../backtest/service.js";
 const [code = "TREND_ROTATION", start = "2025-01-01", end = new Date().toISOString().slice(0, 10), split = "FULL"] = process.argv.slice(2);
 const pool = getPool();
 await migrate(pool);
-await bootstrap(pool, fxFromConfig());
+await bootstrap(pool, fxFromConfig(), marketFromConfig().name);
 const v = await latestVersion(pool, code);
 if (!v) throw new Error(`unknown strategy ${code}`);
 const { id, result } = await runStoredBacktest(pool, marketFromConfig(), { strategyVersionId: v.id, start, end, split: split as "FULL" });

@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   MARKET_DATA_API_SECRET: z.string().optional(),
   ALPACA_DATA_FEED: z.enum(["iex", "sip"]).default("iex"),
   MAX_QUOTE_AGE_MINUTES: num(20),
+  /** Simulated prices / static FX are refused in production unless explicitly allowed. */
+  ALLOW_SIMULATED_DATA: bool,
 
   // FX source for USD/ILS. "frankfurter" (ECB reference rates, no key) or "static" (dev only).
   FX_PROVIDER: z.enum(["frankfurter", "static"]).default("static"),
@@ -73,7 +75,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Invalid configuration: ${issues}`);
   }
-  return parsed.data;
+  const c = parsed.data;
+  if (c.NODE_ENV === "production" && !c.ALLOW_SIMULATED_DATA) {
+    if (c.MARKET_DATA_PROVIDER !== "alpaca")
+      throw new Error("Invalid configuration: production requires MARKET_DATA_PROVIDER=alpaca (real prices). Set ALLOW_SIMULATED_DATA=true only for a demo.");
+    if (c.FX_PROVIDER === "static")
+      throw new Error("Invalid configuration: production requires a real USD/ILS source (FX_PROVIDER=frankfurter).");
+  }
+  return c;
 }
 
 export function config(): AppConfig {

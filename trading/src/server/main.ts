@@ -2,7 +2,7 @@ import { config } from "../config.js";
 import { getPool, closePool } from "../db/pool.js";
 import { migrate } from "../db/migrate.js";
 import { bootstrap } from "../setup/bootstrap.js";
-import { fxFromConfig } from "../app/deps.js";
+import { fxFromConfig, marketFromConfig } from "../app/deps.js";
 import { buildApp } from "./app.js";
 import { errMsg, log } from "../lib/logger.js";
 
@@ -10,7 +10,7 @@ async function main() {
   const c = config();
   const pool = getPool();
   await migrate(pool, (m) => log.info(m));
-  await bootstrap(pool, fxFromConfig());
+  await bootstrap(pool, fxFromConfig(), marketFromConfig().name);
   const app = await buildApp(pool);
   await app.listen({ port: c.PORT, host: "0.0.0.0" });
   log.info("api listening", { port: c.PORT });

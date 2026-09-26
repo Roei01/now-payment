@@ -30,6 +30,7 @@ export function registerReadRoutes(app: FastifyInstance, pool: pg.Pool) {
          LEFT JOIN strategy_versions v ON v.id = sa.strategy_version_id
          LEFT JOIN strategies s ON s.id = v.strategy_id
          LEFT JOIN (${LATEST_PERF}) perf ON perf.portfolio_id = p.id
+        WHERE p.status <> 'ARCHIVED'
         ORDER BY CASE p.kind WHEN 'PAPER' THEN 0 WHEN 'BENCHMARK' THEN 1 ELSE 2 END, p.code`,
     );
     const lastCycle = await maybeOne(pool, "SELECT id, started_at, finished_at, status, market_open, notes FROM decision_cycles ORDER BY started_at DESC LIMIT 1");
@@ -66,8 +67,15 @@ export function registerReadRoutes(app: FastifyInstance, pool: pg.Pool) {
     const benchmark = await query(
       pool,
       `SELECT to_char(pd.date, 'YYYY-MM-DD') AS date, pd.net_return_pct FROM performance_daily pd JOIN portfolios b ON b.id = pd.portfolio_id
-        WHERE b.kind = 'BENCHMARK' ORDER BY pd.date`,
+        WHERE b.kind = 'BENCHMARK' AND b.status <> 'ARCHIVED' ORDER BY pd.date`,
     );
+    const runs = await query(
+      pool,
+      `SELECT id, code, run_number, status, data_source, initial_capital_ils, started_at, archived_at FROM portfolios
+        WHERE kind = $1 AND (code = $2 OR code LIKE $2 || '#run%') ORDER BY run_number DESC`,
+      [p.kind, String(p.code).split("#")[0]],
+    );
+    const dataSourceIncident = await maybeOne(pool, "SELECT message FROM incidents WHERE dedupe_key = $1 AND resolved_at IS NULL", [`data-source:${p.id}`]);
     const snapshot = await maybeOne(pool, "SELECT as_of, cash_usd, value_usd, positions FROM positions_snapshots WHERE portfolio_id = $1 ORDER BY as_of DESC LIMIT 1", [p.id]);
     const trades = await query(
       pool,
@@ -109,7 +117,7 @@ export function registerReadRoutes(app: FastifyInstance, pool: pg.Pool) {
       [p.id],
     );
     const gate = await maybeOne(pool, "SELECT * FROM promotion_evaluations WHERE portfolio_id = $1 ORDER BY evaluated_at DESC LIMIT 1", [p.id]);
-    return { portfolio: p, performance, benchmark, snapshot, trades, openOrders, decisions, assignments, ledger, pnlBySymbol, gate };
+    return { portfolio: p, runs, dataSourceIncident, performance, benchmark, snapshot, trades, openOrders, decisions, assignments, ledger, pnlBySymbol, gate };
   });
 
   app.get<{ Querystring: { portfolioId?: string; limit?: string; status?: string } }>("/api/decisions", async (req) => {

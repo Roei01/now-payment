@@ -149,7 +149,7 @@ export async function evaluatePortfolioGate(db: Db, portfolioId: string, policy:
   const bench = await query<{ date: string; value_usd: string }>(
     db,
     `SELECT to_char(pd.date, 'YYYY-MM-DD') AS date, pd.value_usd FROM performance_daily pd JOIN portfolios p ON p.id = pd.portfolio_id
-      WHERE p.kind = 'BENCHMARK' ORDER BY pd.date`,
+      WHERE p.kind = 'BENCHMARK' AND p.status <> 'ARCHIVED' ORDER BY pd.date`,
   );
   const tested = await maybeOne<{ n: number }>(
     db,

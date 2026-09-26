@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { z } from "zod";
-import { query, maybeOne, withAdvisoryLock, LOCKS } from "../../db/pool.js";
+import { query, maybeOne, withAdvisoryLock, withTx, LOCKS } from "../../db/pool.js";
+import { startNewRun } from "../../portfolio/runs.js";
+import { currentFx } from "../../market/service.js";
 import { HttpError, requireMfa, requireOwner } from "../auth.js";
 import { audit } from "../../ops/audit.js";
 import { getKillSwitch, setState } from "../../ops/systemState.js";
@@ -51,6 +53,19 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const u = p.kind === "LIVE" ? requireMfa(req, body.totp) : requireOwner(req);
     const status = await resumePortfolio(pool, p.id, u.email, body.reason, p.kind === "LIVE");
     return { ok: true, status };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/portfolios/:id/new-run", async (req) => {
+    const body = z.object({ reason: z.string().min(3), totp: Totp, capitalIls: z.number().positive().optional() }).parse(req.body);
+    const u = requireMfa(req, body.totp);
+    const deps = cycleDepsFromConfig(pool);
+    try {
+      const fx = await currentFx(pool, deps.fx);
+      const id = await withTx((tx) => startNewRun(tx, { portfolioId: req.params.id, capitalIls: body.capitalIls, fx, dataSource: deps.market.name, actor: u.email, reason: body.reason }));
+      return { ok: true, id };
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
   });
 
   app.post<{ Params: { id: string } }>("/api/portfolios/:id/assign", async (req) => {
@@ -221,7 +236,21 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
       const deps = cycleDepsFromConfig(pool);
       const { broker } = deps.brokers({ ...live!, status: "PILOT" });
       const readiness = await liveReadiness(pool, live!.id, broker);
-      await transitionLive(pool, { portfolioId: live!.id, to: body.to as LiveStatus, actor: u.email, reason: body.reason, mfaVerified: true, readiness, strategyVersionId: body.strategyVersionId });
+      let initialFunding;
+      if (body.to === "PILOT" && !live!.initial_capital_usd && broker && readiness.ready) {
+        const acct = await broker.getAccount();
+        initialFunding = { accountCashUsd: Number(acct.cash), fx: await currentFx(pool, deps.fx), dataSource: deps.market.name };
+      }
+      await transitionLive(pool, {
+        portfolioId: live!.id,
+        to: body.to as LiveStatus,
+        actor: u.email,
+        reason: body.reason,
+        mfaVerified: true,
+        readiness,
+        strategyVersionId: body.strategyVersionId,
+        initialFunding,
+      });
       return { ok: true, readiness };
     } catch (err) {
       throw new HttpError(400, (err as Error).message);

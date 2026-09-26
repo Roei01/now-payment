@@ -12,7 +12,7 @@ let csrf = "";
 
 beforeAll(async () => {
   const pool = await freshDb();
-  await bootstrap(pool, new StaticFx(3.7));
+  await bootstrap(pool, new StaticFx(3.7), "simulated");
   app = await buildApp(pool, { serveWeb: false });
 });
 afterAll(async () => {

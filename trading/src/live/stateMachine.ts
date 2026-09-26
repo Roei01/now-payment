@@ -5,6 +5,7 @@ import { enqueueNotification } from "../notify/outbox.js";
 import { latestLivePolicy } from "./policy.js";
 import { assignStrategy, getStrategyVersion } from "../strategies/registry.js";
 import type { Broker } from "../broker/types.js";
+import type { FxQuote } from "../market/types.js";
 
 export type LiveStatus = "DORMANT" | "ELIGIBLE" | "ARMED" | "PILOT" | "ACTIVE" | "PAUSED";
 
@@ -52,9 +53,23 @@ export async function liveReadiness(db: Db, portfolioId: string, broker: Broker 
 
 export async function transitionLive(
   db: Db,
-  args: { portfolioId: string; to: LiveStatus; actor: string; reason: string; mfaVerified: boolean; readiness?: ReadinessReport; strategyVersionId?: string },
+  args: {
+    portfolioId: string;
+    to: LiveStatus;
+    actor: string;
+    reason: string;
+    mfaVerified: boolean;
+    readiness?: ReadinessReport;
+    strategyVersionId?: string;
+    /** Real starting capital, taken from the broker account at pilot start (capped by the signed policy). */
+    initialFunding?: { accountCashUsd: number; fx: FxQuote; dataSource: string };
+  },
 ): Promise<void> {
-  const p = await maybeOne<{ kind: string; status: LiveStatus; auto_promote: boolean }>(db, "SELECT kind, status, auto_promote FROM portfolios WHERE id = $1", [args.portfolioId]);
+  const p = await maybeOne<{ kind: string; status: LiveStatus; auto_promote: boolean; initial_capital_usd: string | null }>(
+    db,
+    "SELECT kind, status, auto_promote, initial_capital_usd FROM portfolios WHERE id = $1",
+    [args.portfolioId],
+  );
   if (!p || p.kind !== "LIVE") throw new Error("not a live portfolio");
   if (!TRANSITIONS[p.status].includes(args.to)) throw new Error(`transition ${p.status} → ${args.to} is not allowed`);
   const isSystem = args.actor === "system";
@@ -77,6 +92,25 @@ export async function transitionLive(
     const v = await getStrategyVersion(db, eligible.strategy_version_id);
     // Copy strategy_id + version + parameters; targets are recomputed on the live state (no trade history is copied).
     await assignStrategy(db, args.portfolioId, v.id, `promoted ${v.code} v${v.version} from paper`, args.actor);
+  }
+  if (args.to === "PILOT" && !p.initial_capital_usd) {
+    const policy = await latestLivePolicy(db, args.portfolioId);
+    if (!args.initialFunding || !policy) throw new Error("pilot start needs the live account balance and a signed policy");
+    const usd = Math.min(args.initialFunding.accountCashUsd, Number(policy.max_capital_usd));
+    if (!(usd > 0)) throw new Error("live account has no cash available");
+    const at = new Date();
+    await query(
+      db,
+      `UPDATE portfolios SET initial_capital_usd = $2, initial_capital_ils = $3, initial_fx_rate = $4, fx_rate_source = $5,
+          fx_rate_as_of = $6, started_at = $7, data_source = $8 WHERE id = $1`,
+      [args.portfolioId, usd.toFixed(6), (usd * args.initialFunding.fx.rate).toFixed(4), args.initialFunding.fx.rate, args.initialFunding.fx.source, args.initialFunding.fx.asOf, at, args.initialFunding.dataSource],
+    );
+    await query(
+      db,
+      `INSERT INTO ledger_entries (portfolio_id, entry_type, cash_delta, currency, reference, occurred_at, memo)
+       VALUES ($1, 'INITIAL_DEPOSIT', $2, 'USD', 'initial-deposit', $3, $4)`,
+      [args.portfolioId, usd.toFixed(6), at, `allocated from live broker account cash ${args.initialFunding.accountCashUsd} (cap ${policy.max_capital_usd})`],
+    );
   }
   await query(db, "UPDATE portfolios SET status = $2 WHERE id = $1", [args.portfolioId, args.to]);
   await query(

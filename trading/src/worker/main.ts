@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 import { closePool, getPool } from "../db/pool.js";
 import { migrate } from "../db/migrate.js";
-import { cycleDepsFromConfig, fxFromConfig } from "../app/deps.js";
+import { cycleDepsFromConfig, fxFromConfig, marketFromConfig } from "../app/deps.js";
 import { bootstrap } from "../setup/bootstrap.js";
 import { tick } from "./scheduler.js";
 import { errMsg, log } from "../lib/logger.js";
@@ -12,7 +12,7 @@ async function main() {
   const c = config();
   const pool = getPool();
   await migrate(pool, (m) => log.info(m));
-  await bootstrap(pool, fxFromConfig());
+  await bootstrap(pool, fxFromConfig(), marketFromConfig().name);
   const deps = cycleDepsFromConfig(pool);
   log.info("worker started", { market: deps.market.name, tickSeconds: c.WORKER_TICK_SECONDS });
   while (!stopping) {

@@ -20,7 +20,7 @@ export async function queueDailyDigest(db: Db, date: string): Promise<boolean> {
   }>(
     db,
     `SELECT p.code, p.name, p.kind, p.status, pd.value_usd, pd.value_ils, pd.net_return_pct, pd.return_ils_pct, pd.loss_from_initial_pct, pd.drawdown_pct, pd.simulated_data
-       FROM portfolios p LEFT JOIN performance_daily pd ON pd.portfolio_id = p.id AND pd.date = $1 ORDER BY p.kind DESC, p.code`,
+       FROM portfolios p LEFT JOIN performance_daily pd ON pd.portfolio_id = p.id AND pd.date = $1 WHERE p.status <> 'ARCHIVED' ORDER BY p.kind DESC, p.code`,
     [date],
   );
   const decisions = await query<{ code: string; action: string; status: string; n: number }>(

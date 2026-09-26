@@ -28,7 +28,7 @@ const LATER = new Date("2026-09-24T17:30:00Z");
 
 beforeAll(async () => {
   pool = await freshDb();
-  await bootstrap(pool, new StaticFx(3.7), OPEN);
+  await bootstrap(pool, new StaticFx(3.7), "simulated", OPEN);
   deps = {
     pool,
     market: new SimulatedMarketData(),
@@ -54,7 +54,7 @@ describe("bootstrap", () => {
       expect(st.cash.toNumber()).toBeCloseTo((200 / 3.7) * (1 - 0.0025), 6); // conversion cost booked
     }
     expect((await byCode("LIVE")).status).toBe("DORMANT");
-    await bootstrap(pool, new StaticFx(4), OPEN); // idempotent
+    await bootstrap(pool, new StaticFx(4), "simulated", OPEN); // idempotent
     expect(await listPortfolios(pool)).toHaveLength(5);
   });
 });
@@ -209,5 +209,80 @@ describe("notifications", () => {
     await dispatchNotifications(pool, undefined);
     const n = await maybeOne(pool, "SELECT status FROM notifications WHERE dedupe_key = 't1'");
     expect(n.status).toBe("SUPPRESSED");
+  });
+});
+
+describe("real-data continuity (no silent reset, no source mixing)", () => {
+  it("suspends a run when the data source changes, without resetting its money", async () => {
+    await query(pool, "UPDATE portfolios SET status = 'ACTIVE' WHERE status = 'PAUSED'");
+    const p = await byCode("PAPER-2");
+    const before = await loadState(pool, p.id);
+    const ordersBefore = (await query(pool, "SELECT 1 FROM orders WHERE portfolio_id = $1", [p.id])).length;
+    class RenamedFeed extends SimulatedMarketData {
+      override readonly name = "alpaca";
+    }
+    const r = await runCycle({ ...deps, market: new RenamedFeed() }, new Date("2026-09-25T15:00:00Z"));
+    expect(r.notes.join(" ")).toMatch(/data source changed/);
+    expect((await query(pool, "SELECT 1 FROM orders WHERE portfolio_id = $1", [p.id])).length).toBe(ordersBefore);
+    const after = await loadState(pool, p.id);
+    expect(after.cash.toFixed(6)).toBe(before.cash.toFixed(6));
+    expect(after.positions.size).toBe(before.positions.size);
+    const inc = await maybeOne(pool, "SELECT severity FROM incidents WHERE dedupe_key = $1 AND resolved_at IS NULL", [`data-source:${p.id}`]);
+    expect(inc.severity).toBe("CRITICAL");
+  });
+
+  it("starts a new run only by explicit decision, archiving history", async () => {
+    const { startNewRun } = await import("../src/portfolio/runs.js");
+    const old = await byCode("PAPER-2");
+    const oldLedger = (await query(pool, "SELECT 1 FROM ledger_entries WHERE portfolio_id = $1", [old.id])).length;
+    const id = await startNewRun(pool, {
+      portfolioId: old.id,
+      fx: { base: "USD", quote: "ILS", rate: 3.6, source: "test", asOf: new Date() },
+      dataSource: "alpaca",
+      actor: "owner@x",
+      reason: "switch to real data",
+    });
+    const fresh = await byCode("PAPER-2");
+    expect(fresh.id).toBe(id);
+    expect(fresh.run_number).toBe(2);
+    expect(fresh.data_source).toBe("alpaca");
+    expect(Number(fresh.initial_capital_ils)).toBe(200);
+    expect((await loadState(pool, id)).cash.toNumber()).toBeCloseTo((200 / 3.6) * 0.9975, 6);
+    const archived = await maybeOne(pool, "SELECT status, code, replaced_by FROM portfolios WHERE id = $1", [old.id]);
+    expect(archived.status).toBe("ARCHIVED");
+    expect(archived.replaced_by).toBe(id);
+    expect((await query(pool, "SELECT 1 FROM ledger_entries WHERE portfolio_id = $1", [old.id])).length).toBe(oldLedger);
+    const a = await maybeOne(pool, "SELECT s.code FROM strategy_assignments sa JOIN strategy_versions v ON v.id = sa.strategy_version_id JOIN strategies s ON s.id = v.strategy_id WHERE sa.portfolio_id = $1 AND sa.unassigned_at IS NULL", [id]);
+    expect(a.code).toBe("DEFENSIVE_REBALANCE");
+  });
+
+  it("refuses simulated prices or a static FX rate in production", async () => {
+    const { loadConfig } = await import("../src/config.js");
+    const base = { DATABASE_URL: "x", APP_SECRET: "y".repeat(40), NODE_ENV: "production" };
+    expect(() => loadConfig({ ...base } as NodeJS.ProcessEnv)).toThrow(/MARKET_DATA_PROVIDER=alpaca/);
+    expect(() => loadConfig({ ...base, MARKET_DATA_PROVIDER: "alpaca" } as NodeJS.ProcessEnv)).toThrow(/FX_PROVIDER/);
+    expect(() => loadConfig({ ...base, MARKET_DATA_PROVIDER: "alpaca", FX_PROVIDER: "frankfurter" } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+
+  it("funds the live portfolio from the real account at pilot start, capped by the signed policy", async () => {
+    const { signLivePolicy } = await import("../src/live/policy.js");
+    const live = await byCode("LIVE");
+    await signLivePolicy(pool, live.id, { maxCapitalUsd: 300, pilotFraction: 0.1, allowedSymbols: ["SPY"], maxPositionPct: 0.4, maxOrderUsd: 50, riskBudgetPct: 0.3, strategySwitchPolicy: "MANUAL", autoPromote: false }, "owner@x", true);
+    await query(pool, "UPDATE portfolios SET status = 'ARMED' WHERE id = $1", [live.id]);
+    const ready = { ready: true, checks: [] };
+    await expect(transitionLive(pool, { portfolioId: live.id, to: "PILOT", actor: "owner@x", reason: "go", mfaVerified: true, readiness: ready })).rejects.toThrow(/account balance/);
+    await transitionLive(pool, {
+      portfolioId: live.id,
+      to: "PILOT",
+      actor: "owner@x",
+      reason: "go",
+      mfaVerified: true,
+      readiness: ready,
+      initialFunding: { accountCashUsd: 1000, fx: { base: "USD", quote: "ILS", rate: 3.6, source: "test", asOf: new Date() }, dataSource: "alpaca" },
+    });
+    const p = await byCode("LIVE");
+    expect(p.status).toBe("PILOT");
+    expect(Number(p.initial_capital_usd)).toBe(300);
+    expect((await loadState(pool, p.id)).cash.toNumber()).toBe(300);
   });
 });

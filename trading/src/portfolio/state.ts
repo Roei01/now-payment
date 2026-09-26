@@ -23,6 +23,10 @@ export interface PortfolioRow {
   status_before_pause: string | null;
   started_at: Date | null;
   created_at: Date;
+  data_source: string | null;
+  archived_at: Date | null;
+  replaced_by: string | null;
+  run_number: number;
 }
 
 export interface Position {
@@ -51,8 +55,13 @@ export async function getPortfolio(db: Db, id: string): Promise<PortfolioRow> {
   return one<PortfolioRow>(db, "SELECT * FROM portfolios WHERE id = $1", [id]);
 }
 
-export async function listPortfolios(db: Db): Promise<PortfolioRow[]> {
-  return query<PortfolioRow>(db, "SELECT * FROM portfolios ORDER BY kind DESC, code");
+/** Current runs only; archived runs stay in the database for history. */
+export async function listPortfolios(db: Db, opts: { includeArchived?: boolean } = {}): Promise<PortfolioRow[]> {
+  return query<PortfolioRow>(
+    db,
+    `SELECT * FROM portfolios WHERE ($1 OR status <> 'ARCHIVED') ORDER BY kind DESC, code`,
+    [opts.includeArchived ?? false],
+  );
 }
 
 /** Derives state from the immutable ledger plus open orders (the ledger is the source of truth). */

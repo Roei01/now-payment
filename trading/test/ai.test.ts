@@ -82,7 +82,7 @@ function deps(model: FakeModel): CycleDeps {
 
 beforeAll(async () => {
   pool = await freshDb();
-  await bootstrap(pool, new StaticFx(3.7), OPEN);
+  await bootstrap(pool, new StaticFx(3.7), "simulated", OPEN);
   // Keep the test focused on the AI portfolio.
   await query(pool, "UPDATE portfolios SET status = 'PAUSED' WHERE code <> 'PAPER-3' AND kind <> 'LIVE'");
 });

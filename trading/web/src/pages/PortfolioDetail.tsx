@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { Me } from "../App";
-import { Badge, LineChart, Loading, Stat, useApi } from "../components/ui";
+import { Badge, LineChart, Loading, Stat, TotpField, useApi } from "../components/ui";
 import { dt, he, num, pct, signClass, usd, ils } from "../format";
 
 export function PortfolioDetail({ id, me }: { id: string; me: Me }) {
   const { data, error, reload } = useApi<any>(`/api/portfolios/${id}`, [id]);
   const [busy, setBusy] = useState(false);
+  const [totp, setTotp] = useState("");
   if (!data) return <Loading error={error} />;
-  const { portfolio: p, performance, benchmark, snapshot, trades, openOrders, decisions, assignments, pnlBySymbol, gate } = data;
+  const { runs, dataSourceIncident, portfolio: p, performance, benchmark, snapshot, trades, openOrders, decisions, assignments, pnlBySymbol, gate } = data;
   const last = performance.at(-1);
   const retSeries = { label: "תיק (תשואה $)", color: "var(--series-1)", points: performance.map((r: any) => ({ x: r.date, y: Number(r.net_return_pct) })) };
   const benchSeries = { label: "מדד ייחוס SPY", color: "var(--series-2)", points: benchmark.map((r: any) => ({ x: r.date, y: Number(r.net_return_pct) })) };
@@ -27,8 +28,30 @@ export function PortfolioDetail({ id, me }: { id: string; me: Me }) {
     }
   };
 
+  const newRun = async () => {
+    const capital = prompt("הון התחלתי לריצה החדשה (₪):", String(Number(p.initial_capital_ils ?? 200)));
+    if (!capital) return;
+    const reason = prompt("סיבה (הריצה הנוכחית תישמר בארכיון, כולל כל ההיסטוריה):");
+    if (!reason) return;
+    setBusy(true);
+    try {
+      const r = await api<{ id: string }>(`/api/portfolios/${p.id}/new-run`, { method: "POST", body: { reason, totp, capitalIls: Number(capital) } });
+      location.hash = `#/portfolio/${r.id}`;
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
+      {dataSourceIncident && (
+        <div className="banner bad">
+          <strong>מקור הנתונים השתנה.</strong> הריצה הזו התחילה על נתוני <span className="ltr">{p.data_source}</span> והמסחר בה מושעה. ההון לא אופס. כדי להמשיך על הנתונים הנוכחיים פתחו ריצה חדשה (למטה) — רק לפי החלטתכם.
+        </div>
+      )}
+      {p.status === "ARCHIVED" && <div className="banner warn">ריצה בארכיון (צפייה בלבד).</div>}
       <div className="card">
         <h2>
           <span>{p.name}</span>
@@ -43,6 +66,7 @@ export function PortfolioDetail({ id, me }: { id: string; me: Me }) {
           <Stat label="רווח לא ממומש" value={usd(last?.unrealized_pnl_usd)} className={signClass(last?.unrealized_pnl_usd)} />
           <Stat label="הון התחלתי" value={p.initial_capital_ils ? `₪${Number(p.initial_capital_ils).toFixed(0)}` : "טרם נקבע"} sub={p.initial_fx_rate ? <span className="num">{usd(p.initial_capital_usd)} @ {Number(p.initial_fx_rate).toFixed(4)}</span> : undefined} />
           <Stat label="ביצוע" value={p.execution_venue === "INTERNAL_SIM" ? "סימולטור" : p.execution_venue} sub={p.fx_rate_source ?? undefined} />
+          <Stat label="מקור נתונים / ריצה" value={<span className="ltr">{p.data_source ?? "—"}</span>} className={p.data_source === "simulated" ? "warn" : ""} sub={`ריצה ${p.run_number} · מאז ${p.started_at ? dt(p.started_at) : "—"}`} />
         </div>
         {me.role === "owner" && p.kind !== "LIVE" && (
           <div className="row" style={{ marginTop: 12 }}>
@@ -192,6 +216,27 @@ export function PortfolioDetail({ id, me }: { id: string; me: Me }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="section-title">ריצות (ההון לא מתאפס אלא בהחלטתכם)</div>
+      <div className="card">
+        {runs.map((r: any) => (
+          <a key={r.id} href={`#/portfolio/${r.id}`} className="list-item" style={{ fontSize: 13 }}>
+            ריצה {r.run_number} · <Badge value={r.status} text={r.status === "ARCHIVED" ? "ארכיון" : he(r.status)} /> · <span className="ltr">{r.data_source ?? "—"}</span> · ₪{Number(r.initial_capital_ils ?? 0).toFixed(0)} · {dt(r.started_at)}
+            {r.archived_at ? ` → ${dt(r.archived_at)}` : ""}
+          </a>
+        ))}
+        {me.role === "owner" && p.kind !== "LIVE" && p.status !== "ARCHIVED" && (
+          <div style={{ marginTop: 12 }}>
+            <p className="muted" style={{ fontSize: 12 }}>
+              פתיחת ריצה חדשה מעבירה את הריצה הנוכחית לארכיון ומתחילה מחדש עם הון התחלתי ושער מטבע עדכניים על מקור הנתונים הנוכחי. דורש 2FA.
+            </p>
+            <TotpField value={totp} onChange={setTotp} />
+            <button className="btn" disabled={busy} onClick={newRun}>
+              פתיחת ריצה חדשה
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="section-title">היסטוריית אסטרטגיות ושער קידום</div>

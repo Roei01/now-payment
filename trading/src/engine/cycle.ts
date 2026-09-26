@@ -388,6 +388,18 @@ export async function runCycle(deps: CycleDeps, now: Date = new Date()): Promise
           notes.push(`${portfolio.code}: unknown strategy ${version.code}`);
           continue;
         }
+        // A run is bound to the data source it started on. Never continue (or silently reset) on another source.
+        if (portfolio.data_source && portfolio.data_source !== deps.market.name) {
+          await openIncident(pool, {
+            severity: "CRITICAL",
+            kind: "DATA_SOURCE_CHANGED",
+            message: `${portfolio.name} started on '${portfolio.data_source}' data but the system now uses '${deps.market.name}'. Trading is suspended for this run until the owner starts a new run.`,
+            portfolioId: portfolio.id,
+            dedupeKey: `data-source:${portfolio.id}`,
+          });
+          notes.push(`${portfolio.code}: data source changed (${portfolio.data_source} → ${deps.market.name}); awaiting owner decision`);
+          continue;
+        }
         const live = portfolio.kind === "LIVE" ? await latestLivePolicy(pool, portfolio.id) : undefined;
         const policy = riskPolicyFor(portfolio, live);
         const tradeable = TRADEABLE_STATUS[portfolio.kind].includes(portfolio.status);
