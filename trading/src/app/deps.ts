@@ -1,0 +1,59 @@
+import type pg from "pg";
+import { config } from "../config.js";
+import { getPool } from "../db/pool.js";
+import { AlpacaMarketData } from "../market/alpaca.js";
+import { SimulatedMarketData } from "../market/simulated.js";
+import { FrankfurterFx, StaticFx } from "../market/fx.js";
+import type { FxProvider, MarketDataProvider } from "../market/types.js";
+import { defaultBrokerFactory } from "../broker/factory.js";
+import { DEFAULT_COSTS } from "../risk/policy.js";
+import { AnthropicProvider } from "../ai/provider.js";
+import { EdgarFundamentals } from "../research/edgar.js";
+import type { CycleDeps } from "../engine/cycle.js";
+
+export function marketFromConfig(): MarketDataProvider {
+  const c = config();
+  if (c.MARKET_DATA_PROVIDER === "alpaca") {
+    if (!c.MARKET_DATA_API_KEY || !c.MARKET_DATA_API_SECRET) throw new Error("MARKET_DATA_PROVIDER=alpaca requires MARKET_DATA_API_KEY and MARKET_DATA_API_SECRET");
+    return new AlpacaMarketData({ keyId: c.MARKET_DATA_API_KEY, secret: c.MARKET_DATA_API_SECRET }, c.ALPACA_DATA_FEED);
+  }
+  return new SimulatedMarketData();
+}
+
+export function fxFromConfig(): FxProvider {
+  const c = config();
+  return c.FX_PROVIDER === "frankfurter" ? new FrankfurterFx() : new StaticFx(c.FX_STATIC_USD_ILS);
+}
+
+export function cycleDepsFromConfig(pool: pg.Pool = getPool()): CycleDeps {
+  const c = config();
+  return {
+    pool,
+    market: marketFromConfig(),
+    fx: fxFromConfig(),
+    brokers: defaultBrokerFactory(pool, DEFAULT_COSTS),
+    ai: {
+      provider: c.AI_PROVIDER === "anthropic" && c.AI_API_KEY ? new AnthropicProvider(c.AI_API_KEY) : undefined,
+      edgar: c.SEC_EDGAR_USER_AGENT ? new EdgarFundamentals(c.SEC_EDGAR_USER_AGENT) : undefined,
+      model: c.AI_MANAGER_MODEL,
+      budget: { aiBudgetIls: c.AI_MONTHLY_BUDGET_ILS, opsCapIls: c.OPS_MONTHLY_CAP_ILS, infraEstimateIls: c.INFRA_MONTHLY_ESTIMATE_ILS },
+    },
+    maxQuoteAgeMinutes: c.MAX_QUOTE_AGE_MINUTES,
+    maxAiCallsPerCycle: 2,
+  };
+}
+
+/** What is connected and what is not — shown on the Operations screen. */
+export function integrationStatus() {
+  const c = config();
+  return {
+    marketData: c.MARKET_DATA_PROVIDER === "alpaca" && c.MARKET_DATA_API_KEY ? `alpaca (${c.ALPACA_DATA_FEED})` : "SIMULATED (not real prices)",
+    fx: c.FX_PROVIDER === "frankfurter" ? "frankfurter (ECB reference)" : `STATIC ${c.FX_STATIC_USD_ILS} (dev only)`,
+    ai: c.AI_PROVIDER === "anthropic" && c.AI_API_KEY ? `anthropic ${c.AI_MANAGER_MODEL}` : "not configured → AI decisions deferred",
+    fundamentals: c.SEC_EDGAR_USER_AGENT ? "SEC EDGAR" : "not configured",
+    paperBroker: c.BROKER_PAPER_KEY ? "alpaca paper keys present" : "internal simulator only",
+    liveBroker: c.BROKER_LIVE_KEY ? "alpaca live keys present" : "not configured",
+    liveTradingEnabled: c.LIVE_TRADING_ENABLED,
+    email: c.NOTIFICATIONS_PROVIDER === "resend" && c.NOTIFICATIONS_API_KEY && c.ALERT_EMAIL_TO && c.ALERT_EMAIL_FROM ? `resend → ${c.ALERT_EMAIL_TO}` : "not configured (alerts visible in the app only)",
+  };
+}

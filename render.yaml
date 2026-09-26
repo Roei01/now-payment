@@ -1,0 +1,70 @@
+# Render Blueprint for the paper/live trading app in ./trading.
+# Web (API + mobile UI), background worker (trading cycles) and Postgres.
+# Secrets marked `sync: false` are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: trading-web
+    runtime: node
+    rootDir: trading
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:api
+    healthCheckPath: /api/health
+    envVars: &shared
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trading-db
+          property: connectionString
+      - key: APP_SECRET
+        sync: false
+      - key: SETUP_TOKEN
+        sync: false
+      - key: MARKET_DATA_PROVIDER
+        value: alpaca
+      - key: MARKET_DATA_API_KEY
+        sync: false
+      - key: MARKET_DATA_API_SECRET
+        sync: false
+      - key: ALPACA_DATA_FEED
+        value: iex
+      - key: FX_PROVIDER
+        value: frankfurter
+      - key: SEC_EDGAR_USER_AGENT
+        sync: false
+      - key: AI_PROVIDER
+        value: anthropic
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MANAGER_MODEL
+        value: claude-opus-5
+      - key: AI_MONTHLY_BUDGET_ILS
+        value: "60"
+      - key: OPS_MONTHLY_CAP_ILS
+        value: "150"
+      - key: INFRA_MONTHLY_ESTIMATE_ILS
+        value: "75"
+      - key: NOTIFICATIONS_PROVIDER
+        value: resend
+      - key: NOTIFICATIONS_API_KEY
+        sync: false
+      - key: ALERT_EMAIL_TO
+        sync: false
+      - key: ALERT_EMAIL_FROM
+        sync: false
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
+  - type: worker
+    name: trading-worker
+    runtime: node
+    rootDir: trading
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:worker
+    envVars: *shared
+
+databases:
+  - name: trading-db
+    plan: basic-256mb
+    databaseName: trading
