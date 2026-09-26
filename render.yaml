@@ -16,6 +16,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
       - key: RUN_WORKER_IN_WEB
         value: "true"
       - key: APP_SECRET

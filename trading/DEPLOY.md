@@ -1,74 +1,105 @@
-# העלאה ל־Render: רשימת צעדים
+# העלאה לאוויר — רשימת סימון
 
-## 1. חשבונות ומפתחות שצריך להכין מראש
+## 1. מפתחות וחשבונות שצריך להשיג
 
-| # | מה | איפה | חובה? | ישמש כ־ |
+| # | מה | מאיפה | מה מעתיקים | חובה? |
 |---|---|---|---|---|
-| 1 | חשבון GitHub עם ה־repo והענף הזה (ממוזג ל־main או נבחר ב־Blueprint) | github.com | חובה | — |
-| 2 | חשבון Render עם כרטיס אשראי. שירות Starter אחד בכ־7$ לחודש (השירות החינמי נרדם כשאין תנועה, ואז המחזורים לא רצים) | render.com | חובה | — |
-| 2א | Postgres חיצוני קבוע, למשל Neon או Supabase במסלול החינמי. יוצרים פרויקט ומעתיקים את ה־connection string | neon.tech / supabase.com | חובה | `DATABASE_URL` |
-| 3 | מפתחות Alpaca **Paper**: Key ID ו־Secret | alpaca.markets ← Paper ← API Keys | חובה | `MARKET_DATA_API_KEY`, `MARKET_DATA_API_SECRET` |
-| 4 | מפתח API של ספק AI אחד לבחירתכם (ראו סעיף 4) | console.anthropic.com / platform.openai.com / openrouter.ai … | מומלץ (בלעדיו תיק 3 רק מחזיק) | `AI_API_KEY` |
-| 5 | שורת זיהוי ל־SEC: `YourName your@email.com` | לא צריך הרשמה | מומלץ (נדרש לתיק 3) | `SEC_EDGAR_USER_AGENT` |
-| 6 | חשבון Resend ומפתח API | resend.com ← API Keys | מומלץ (בלעדיו אין מייל, ההתראות מוצגות באתר) | `NOTIFICATIONS_API_KEY` |
-| 7 | כתובת שולח וכתובת נמען | Resend: בלי דומיין מאומת אפשר לשלוח מ־`onboarding@resend.dev` רק לכתובת של בעל החשבון. עם דומיין אפשר מכל כתובת בו | עם 6 | `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` |
-| 8 | סיסמה אקראית חד־פעמית ליצירת המשתמש הראשון | אתם ממציאים | חובה | `SETUP_TOKEN` |
+| 1 | **Alpaca Paper** (מחירי שוק אמיתיים) | alpaca.markets ← Sign Up ← **Trading API** ← בדשבורד לעבור ל־**Paper** ← **API Keys** ← Generate | Key ID + Secret Key. ה־Secret מוצג פעם אחת בלבד | **חובה** |
+| 2 | **מסד נתונים Postgres** | neon.tech ← New Project, אזור **AWS US East** ← Connection string | מחרוזת שמתחילה ב־`postgresql://…?sslmode=require` | **חובה** |
+| 3 | **מפתח AI** | Claude: console.anthropic.com ← API Keys (צריך להוסיף קרדיט ב־Billing). אפשר גם OpenAI / OpenRouter וכו' | המפתח | מומלץ (בלעדיו תיק 3 רק מחזיק) |
+| 4 | **זיהוי ל־SEC** (דוחות חברות) | בלי הרשמה | שורה בפורמט `Roei royinagar1@gmail.com` | מומלץ (נדרש לתיק 3) |
+| 5 | **Resend** (מיילים) | resend.com ← API Keys ← Create | המפתח | מומלץ |
+| 6 | **כתובת שולח** | בלי דומיין: `onboarding@resend.dev`, שולח רק למייל שאיתו נרשמתם ל־Resend. עם דומיין: Domains ← Add ← אימות DNS | כתובת | עם 5 |
+| 7 | **קוד הקמה** | ממציאים (למשל 24 תווים אקראיים) | — | **חובה** |
+| 8 | **Render** | render.com, עם כרטיס אשראי | — | **חובה** |
+| — | שער דולר/שקל (Frankfurter) | לא צריך מפתח | — | אוטומטי |
+| — | Alpaca **Live** | רק בעתיד, אחרי אימות זהות. לא עכשיו | — | לא עכשיו |
 
-`APP_SECRET` נוצר אוטומטית על ידי Render ואין צורך להזין אותו.
+## 2. יצירת השירות ב־Render
 
-## 2. יצירת השירותים
+**אפשרות א' (מומלץ):** New ← **Blueprint** ← בוחרים את `Roei01/now-payment` ואת הענף. כל ההגדרות נקראות מ־`render.yaml`, ונשאר רק למלא את הסודות (סעיף 3).
 
-1. Render Dashboard ← **New** ← **Blueprint** ← בוחרים את ה־repo `now-payment` ואת הענף.
-2. Render קורא את `render.yaml` ויוצר שירות אחד בשם `trading-web`. השירות מריץ את האתר, את ה־API ואת מחזורי המסחר (`RUN_WORKER_IN_WEB=true`).
-3. Render מבקש את ערכי ה־`sync: false`. **חשוב במיוחד:** ‏`DATABASE_URL` הוא ה־connection string של Neon או Supabase. השאר:
-   - `MARKET_DATA_API_KEY`, `MARKET_DATA_API_SECRET`
-   - `AI_API_KEY`
-   - `SEC_EDGAR_USER_AGENT`
-   - `NOTIFICATIONS_API_KEY`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-   - `SETUP_TOKEN`
+**אפשרות ב' (ידני):** New ← **Web Service** ← בוחרים את ה־repo וממלאים:
 
-   ערך שעוד אין לכם אפשר להשאיר ריק ולהוסיף אחר כך. חוץ ממפתחות Alpaca, שבלעדיהם השרת לא יעלה בכוונה, כי בפרודקשן אסור לו לרוץ על מחירים מדומים.
-4. **Apply**. ה־build מריץ את `npm ci` ו־`npm run build`, ובעלייה השרת מריץ את המיגרציות ויוצר את התיקים.
+| שדה ב־Render | ערך |
+|---|---|
+| Branch | `claude/portfolio-paper-live-trading-uf8o5u` (או `main` אחרי מיזוג) |
+| **Root Directory** | `trading` |
+| Language / Runtime | `Node` |
+| **Build Command** | `npm ci --include=dev && npm run build` |
+| **Start Command** | `npm run start:api` |
+| Instance Type | **Starter** (לא Free, כי השרת החינמי נרדם והמחזורים לא ירוצו) |
+| Region | **Virginia (US East)**, קרוב ל־Alpaca ול־Neon |
+| **Health Check Path** (תחת Advanced) | `/api/health` |
+| Auto-Deploy | On Commit |
 
-## 3. כניסה ראשונה
+## 3. משתני סביבה (Environment) ב־Render
 
-1. פותחים את כתובת `trading-web` (בערך `https://trading-web.onrender.com`).
-2. מזינים את `SETUP_TOKEN`, מייל וסיסמה (12 תווים לפחות). כך נוצר משתמש הבעלים.
-3. **הגדרות ← הפעלת 2FA** בעזרת אפליקציית אימות. בלי 2FA פעולות רגישות חסומות.
-4. אחרי ההקמה כדאי למחוק את `SETUP_TOKEN` מ־Render, או לשנות אותו לערך אחר. הקמה נוספת כבר חסומה בכל מקרה.
-5. בנייד: פותחים את הכתובת בדפדפן ובוחרים "הוסף למסך הבית".
-6. **מסך תפעול ← חיבורים**: שם רואים מה מחובר. `marketData` צריך להראות `alpaca (iex)`, ו־`ai` צריך להראות את הספק והמודל.
-
-המחזורים רצים בשעות המסחר בארה״ב (16:30–23:00 שעון ישראל בדרך כלל), ומחזור נוסף רץ אחרי הסגירה. אפשר גם ללחוץ "הרצת מחזור עכשיו" במסך תפעול.
-
-## 4. בחירת ספק AI (אפשר להחליף בכל רגע בלי שינוי קוד)
-
-ב־Env Group ‏`trading-settings` משנים את `AI_PROVIDER` ואת `AI_MANAGER_MODEL`, ומזינים `AI_API_KEY` של אותו ספק:
-
-| ספק | `AI_PROVIDER` | `AI_MANAGER_MODEL` (דוגמה, בדקו את השם העדכני אצל הספק) |
+| משתנה | ערך | חובה? |
 |---|---|---|
-| Anthropic Claude | `anthropic` | `claude-opus-5` |
+| `NODE_ENV` | `production` | חובה |
+| `NODE_VERSION` | `22` | חובה |
+| `RUN_WORKER_IN_WEB` | `true` | חובה |
+| `APP_SECRET` | 32+ תווים אקראיים (ב־Blueprint נוצר אוטומטית) | חובה |
+| `DATABASE_URL` | ה־connection string מ־Neon | חובה |
+| `DATABASE_SSL` | `true` | חובה |
+| `SETUP_TOKEN` | קוד ההקמה שהמצאתם | חובה (עד ההקמה) |
+| `MARKET_DATA_PROVIDER` | `alpaca` | חובה |
+| `MARKET_DATA_API_KEY` | Key ID של Alpaca | חובה |
+| `MARKET_DATA_API_SECRET` | Secret של Alpaca | חובה |
+| `ALPACA_DATA_FEED` | `iex` | חובה |
+| `FX_PROVIDER` | `frankfurter` | חובה |
+| `AI_PROVIDER` | `anthropic` (או `openai` / `openrouter` וכו', ראו סעיף 6) | מומלץ |
+| `AI_API_KEY` | מפתח ה־AI | מומלץ |
+| `AI_MANAGER_MODEL` | `claude-opus-5` (או מזהה מודל של הספק שבחרתם) | מומלץ |
+| `AI_MONTHLY_BUDGET_ILS` | `60` | מומלץ |
+| `OPS_MONTHLY_CAP_ILS` | `150` | מומלץ |
+| `INFRA_MONTHLY_ESTIMATE_ILS` | `26` | מומלץ |
+| `SEC_EDGAR_USER_AGENT` | `Roei royinagar1@gmail.com` | מומלץ |
+| `NOTIFICATIONS_PROVIDER` | `resend` | מומלץ |
+| `NOTIFICATIONS_API_KEY` | מפתח Resend | מומלץ |
+| `ALERT_EMAIL_TO` | המייל שלכם | מומלץ |
+| `ALERT_EMAIL_FROM` | `onboarding@resend.dev` או כתובת בדומיין מאומת | מומלץ |
+| `DIGEST_HOUR_IL` | `23` | רשות |
+| `LIVE_TRADING_ENABLED` | `false` | חובה (נשאר `false` עד החלטה על לייב) |
+
+אם חסר משתנה חובה, השרת לא יעלה ויכתוב בלוג בדיוק מה חסר. זה בכוונה, כדי שלא ירוץ בטעות על מחירים מדומים.
+
+## 4. אחרי שהשירות עלה
+
+| # | פעולה | איך בודקים שזה תקין |
+|---|---|---|
+| 1 | פותחים את כתובת השירות (`https://….onrender.com`) | מופיע מסך "הקמת חשבון בעלים" |
+| 2 | מזינים `SETUP_TOKEN`, מייל וסיסמה (12+ תווים) | נכנסים לסקירה |
+| 3 | הגדרות ← **הפעלת אימות דו־שלבי** | "אימות דו־שלבי פעיל" |
+| 4 | תפעול ← חיבורים | נתוני שוק: `alpaca (iex)`, שער: `frankfurter`, AI: הספק והמודל, דוא״ל: מוגדר |
+| 5 | ב־Render: מוחקים את `SETUP_TOKEN` או מחליפים אותו לערך אחר | — |
+| 6 | בזמן מסחר בארה״ב (בדרך כלל 16:30–23:00 שעון ישראל): תפעול ← "הרצת מחזור" | החלטות וקניות ראשונות בתיקים 1, 2 ו־SPY |
+| 7 | בטלפון: פותחים את הכתובת ← "הוסף למסך הבית" | אייקון אפליקציה |
+| 8 | (מומלץ) ניטור חיצוני חינמי, למשל UptimeRobot, על `https://…/api/health` | התראה אם השרת נופל |
+| 9 | בודקים שהגיע הסיכום היומי במייל אחרי 23:00 | מייל "סיכום יומי תיקים" |
+
+## 5. עלות חודשית משוערת (לבדוק מחירים עדכניים)
+
+| רכיב | עלות |
+|---|---|
+| Render Starter | כ־7$ (בערך 26 ₪) |
+| Neon (מסלול חינמי) | 0 |
+| AI | עד 60 ₪, עם עצירה אוטומטית לפני התקרה |
+| Alpaca IEX, Frankfurter, SEC, Resend (נפח קטן) | 0 |
+
+## 6. ספקי AI (מחליפים בלי קוד)
+
+| ספק | `AI_PROVIDER` | `AI_MANAGER_MODEL` |
+|---|---|---|
+| Claude | `anthropic` | `claude-opus-5` |
 | OpenAI | `openai` | מזהה מודל של OpenAI |
-| Meta Llama ורבים אחרים דרך OpenRouter | `openrouter` | `meta-llama/…`, וגם `openai/…`, `google/…`, `mistralai/…` |
-| Meta Llama דרך Together / Groq | `together` / `groq` | מזהה מודל Llama אצל הספק |
-| Google Gemini | `google` | מזהה מודל Gemini |
-| Mistral / DeepSeek / xAI | `mistral` / `deepseek` / `xai` | מזהה מודל של הספק |
-| Llama על שרת משלכם (Ollama) | `ollama` + `AI_BASE_URL` | למשל `llama3.1` |
-| כל ספק אחר עם API תואם OpenAI | `openai-compatible` + `AI_BASE_URL` | מזהה המודל |
+| Meta Llama, Gemini, Mistral ועוד דרך OpenRouter | `openrouter` | למשל `meta-llama/…` |
+| Groq / Together / Mistral / DeepSeek / xAI / Google | שם הספק | מזהה המודל אצל הספק |
+| כל API תואם OpenAI | `openai-compatible` + `AI_BASE_URL` | מזהה המודל |
 
-- **עלויות**: למודלים שלא מופיעים בטבלה המובנית מגדירים `AI_PRICE_INPUT_PER_MTOK` ו־`AI_PRICE_OUTPUT_PER_MTOK` (בדולרים למיליון טוקנים). בלי זה, המערכת מחשבת כל קריאה לפי המחיר הגבוה ביותר, כדי לא לחרוג מהתקרה של 150 ₪.
-- **הוספת ספק חדש**: שורה אחת ב־`src/ai/registry.ts`. ספק שהוא לא תואם OpenAI דורש מחלקה אחת עם מתודה `structuredCall`.
-- **כל ספק עובר את אותן בדיקות**: פלט JSON לפי חוזה, מקורות קיימים בלבד ומרווח ביטחון שמחושב בקוד. אם ספק מסרב או נופל, ההחלטה נדחית.
+למודל שאינו בטבלת המחירים המובנית מוסיפים `AI_PRICE_INPUT_PER_MTOK` ו־`AI_PRICE_OUTPUT_PER_MTOK` (בדולרים למיליון טוקנים). בלי זה המערכת מחשבת לפי המחיר המרבי, כדי לא לחרוג מהתקציב.
 
-## 5. עלות חודשית משוערת (תבדקו את המחירים העדכניים ב־Render)
+## 7. לייב (בעתיד)
 
-- Render: שירות Starter אחד, בערך 7$ לחודש, כלומר כ־26 ₪. זה הערך שהוגדר ב־`INFRA_MONTHLY_ESTIMATE_ILS`. כדאי לבדוק את המחיר העדכני.
-- Postgres ב־Neon או Supabase במסלול החינמי: 0 ₪. יש מגבלות נפח, אבל הן מספיקות בהרבה לפרויקט כזה. כדאי לבדוק את התנאים העדכניים. אם תעדיפו הכול ב־Render, ה־Postgres שלהם בתשלום עולה בערך 6$ לחודש. ה־Postgres החינמי של Render, לפי מה שאני יודע, נמחק אחרי כ־30 יום ולכן לא מתאים.
-- הגדלה בעתיד: מוסיפים שירות worker נפרד (`npm run start:worker`) ומשנים `RUN_WORKER_IN_WEB=false`. אין צורך לשנות קוד.
-- AI: תקרה של 60 ₪ (`AI_MONTHLY_BUDGET_ILS`). המערכת עוצרת קריאות חדשות לפני חריגה.
-- Alpaca IEX, שער המטבע, SEC ו־Resend (בנפח קטן): 0 ₪.
-
-## 6. לייב, בעתיד (לא נדרש עכשיו)
-
-- מזינים `BROKER_LIVE_KEY` ו־`BROKER_LIVE_SECRET` (חשבון Alpaca Live מאומת) ומשנים `LIVE_TRADING_ENABLED=true`.
-- את השאר עושים באתר: חתימה על מדיניות, בדיקת מוכנות והפעלת פיילוט, כל שלב עם 2FA. עדיין לא נבדק אם תושב ישראל יכול לפתוח חשבון Live ב־Alpaca.
+מזינים `BROKER_LIVE_KEY` ו־`BROKER_LIVE_SECRET` ומשנים `LIVE_TRADING_ENABLED=true`. את השאר עושים באתר: חתימת מדיניות, בדיקת מוכנות והפעלת פיילוט, כל שלב עם 2FA. עדיין לא נבדק אם תושב ישראל יכול לפתוח חשבון Live ב־Alpaca.
