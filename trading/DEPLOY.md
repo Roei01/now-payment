@@ -5,7 +5,8 @@
 | # | מה | איפה | חובה? | ישמש כ־ |
 |---|---|---|---|---|
 | 1 | חשבון GitHub עם ה־repo והענף הזה (ממוזג ל־main או נבחר ב־Blueprint) | github.com | חובה | — |
-| 2 | חשבון Render עם כרטיס אשראי (לשירותי worker ו־Postgres אין מסלול חינמי מתאים) | render.com | חובה | — |
+| 2 | חשבון Render עם כרטיס אשראי. שירות Starter אחד בכ־7$ לחודש (השירות החינמי נרדם כשאין תנועה, ואז המחזורים לא רצים) | render.com | חובה | — |
+| 2א | Postgres חיצוני קבוע, למשל Neon או Supabase במסלול החינמי. יוצרים פרויקט ומעתיקים את ה־connection string | neon.tech / supabase.com | חובה | `DATABASE_URL` |
 | 3 | מפתחות Alpaca **Paper**: Key ID ו־Secret | alpaca.markets ← Paper ← API Keys | חובה | `MARKET_DATA_API_KEY`, `MARKET_DATA_API_SECRET` |
 | 4 | מפתח API של ספק AI אחד לבחירתכם (ראו סעיף 4) | console.anthropic.com / platform.openai.com / openrouter.ai … | מומלץ (בלעדיו תיק 3 רק מחזיק) | `AI_API_KEY` |
 | 5 | שורת זיהוי ל־SEC: `YourName your@email.com` | לא צריך הרשמה | מומלץ (נדרש לתיק 3) | `SEC_EDGAR_USER_AGENT` |
@@ -18,17 +19,13 @@
 ## 2. יצירת השירותים
 
 1. Render Dashboard ← **New** ← **Blueprint** ← בוחרים את ה־repo `now-payment` ואת הענף.
-2. Render קורא את `render.yaml` ויוצר:
-   - `trading-web`: האתר וה־API.
-   - `trading-worker`: המחזורים שרצים ברקע.
-   - `trading-db`: Postgres.
-   - Env Group בשם `trading-settings` עם ההגדרות הלא־סודיות.
-3. Render מבקש את ערכי ה־`sync: false`. **מזינים אותם גם ל־web וגם ל־worker**:
+2. Render קורא את `render.yaml` ויוצר שירות אחד בשם `trading-web`. השירות מריץ את האתר, את ה־API ואת מחזורי המסחר (`RUN_WORKER_IN_WEB=true`).
+3. Render מבקש את ערכי ה־`sync: false`. **חשוב במיוחד:** ‏`DATABASE_URL` הוא ה־connection string של Neon או Supabase. השאר:
    - `MARKET_DATA_API_KEY`, `MARKET_DATA_API_SECRET`
    - `AI_API_KEY`
    - `SEC_EDGAR_USER_AGENT`
    - `NOTIFICATIONS_API_KEY`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`
-   - `SETUP_TOKEN` (ל־web בלבד)
+   - `SETUP_TOKEN`
 
    ערך שעוד אין לכם אפשר להשאיר ריק ולהוסיף אחר כך. חוץ ממפתחות Alpaca, שבלעדיהם השרת לא יעלה בכוונה, כי בפרודקשן אסור לו לרוץ על מחירים מדומים.
 4. **Apply**. ה־build מריץ את `npm ci` ו־`npm run build`, ובעלייה השרת מריץ את המיגרציות ויוצר את התיקים.
@@ -65,7 +62,9 @@
 
 ## 5. עלות חודשית משוערת (תבדקו את המחירים העדכניים ב־Render)
 
-- Render: web Starter, worker Starter ו־Postgres basic. לפי הידוע לי, בערך 20$ לחודש, כלומר כ־75 ₪. זה הערך שהוגדר ב־`INFRA_MONTHLY_ESTIMATE_ILS`.
+- Render: שירות Starter אחד, בערך 7$ לחודש, כלומר כ־26 ₪. זה הערך שהוגדר ב־`INFRA_MONTHLY_ESTIMATE_ILS`. כדאי לבדוק את המחיר העדכני.
+- Postgres ב־Neon או Supabase במסלול החינמי: 0 ₪. יש מגבלות נפח, אבל הן מספיקות בהרבה לפרויקט כזה. כדאי לבדוק את התנאים העדכניים. אם תעדיפו הכול ב־Render, ה־Postgres שלהם בתשלום עולה בערך 6$ לחודש. ה־Postgres החינמי של Render, לפי מה שאני יודע, נמחק אחרי כ־30 יום ולכן לא מתאים.
+- הגדלה בעתיד: מוסיפים שירות worker נפרד (`npm run start:worker`) ומשנים `RUN_WORKER_IN_WEB=false`. אין צורך לשנות קוד.
 - AI: תקרה של 60 ₪ (`AI_MONTHLY_BUDGET_ILS`). המערכת עוצרת קריאות חדשות לפני חריגה.
 - Alpaca IEX, שער המטבע, SEC ו־Resend (בנפח קטן): 0 ₪.
 

@@ -65,6 +65,9 @@ const EnvSchema = z.object({
   ALERT_EMAIL_FROM: z.string().optional(),
   DIGEST_HOUR_IL: num(23),
 
+  // Run the trading scheduler inside the web process (single small server instead of web + worker).
+  RUN_WORKER_IN_WEB: bool,
+
   // Worker cadence.
   WORKER_TICK_SECONDS: num(60),
   CYCLE_INTERVAL_MINUTES: num(60),
