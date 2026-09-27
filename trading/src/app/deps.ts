@@ -42,7 +42,7 @@ export function cycleDepsFromConfig(pool: pg.Pool = getPool()): CycleDeps {
     brokers: defaultBrokerFactory(pool, DEFAULT_COSTS),
     ai: {
       provider: aiFromConfig().provider,
-      edgar: c.SEC_EDGAR_USER_AGENT ? new EdgarFundamentals(c.SEC_EDGAR_USER_AGENT) : undefined,
+      edgar: EdgarFundamentals.isValidUserAgent(c.SEC_EDGAR_USER_AGENT) ? new EdgarFundamentals(c.SEC_EDGAR_USER_AGENT!) : undefined,
       model: c.AI_MANAGER_MODEL,
       budget: { aiBudgetIls: c.AI_MONTHLY_BUDGET_ILS, opsCapIls: c.OPS_MONTHLY_CAP_ILS, infraEstimateIls: c.INFRA_MONTHLY_ESTIMATE_ILS },
     },
@@ -61,7 +61,11 @@ export function integrationStatus() {
       const r = aiFromConfig();
       return r.provider ? `${c.AI_PROVIDER} · ${c.AI_MANAGER_MODEL}` : `off (${r.reason}) → AI decisions deferred`;
     })(),
-    fundamentals: c.SEC_EDGAR_USER_AGENT ? "SEC EDGAR" : "not configured",
+    fundamentals: EdgarFundamentals.isValidUserAgent(c.SEC_EDGAR_USER_AGENT)
+      ? "SEC EDGAR"
+      : c.SEC_EDGAR_USER_AGENT
+        ? "misconfigured (SEC_EDGAR_USER_AGENT must be 'Name contact@email')"
+        : "not configured",
     paperBroker: c.BROKER_PAPER_KEY ? "alpaca paper keys present" : "internal simulator only",
     liveBroker: c.BROKER_LIVE_KEY ? "alpaca live keys present" : "not configured",
     liveTradingEnabled: c.LIVE_TRADING_ENABLED,

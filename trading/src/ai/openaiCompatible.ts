@@ -1,4 +1,5 @@
 import type { AiProvider, StructuredCallArgs, StructuredCallResult } from "./provider.js";
+import { toPortableJsonSchema } from "./contract.js";
 
 export interface OpenAiCompatibleOptions {
   name: string;
@@ -8,6 +9,11 @@ export interface OpenAiCompatibleOptions {
   jsonMode: "json_schema" | "json_object";
   /** OpenAI's newer models take max_completion_tokens; most compatible hosts take max_tokens. */
   maxTokensParam: "max_tokens" | "max_completion_tokens";
+  /**
+   * json_schema strict mode (OpenAI: requires additionalProperties:false and every property
+   * in "required"; nullable fields as type unions — our contract satisfies both). Default true.
+   */
+  strict?: boolean;
   extraHeaders?: Record<string, string>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -34,7 +40,8 @@ export class OpenAiCompatibleProvider implements AiProvider {
       outputTokens: 0,
       ...extra,
     });
-    const { $schema: _ignored, ...schema } = args.schema as Record<string, unknown>;
+    // Strict structured outputs reject range/length keywords; the contract re-validates them in code.
+    const schema = toPortableJsonSchema(args.schema);
     const system =
       this.o.jsonMode === "json_object"
         ? `${args.system}\n\nReturn only a JSON object that validates against this JSON Schema:\n${JSON.stringify(schema)}`
@@ -48,7 +55,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
       [this.o.maxTokensParam]: args.maxTokens,
       response_format:
         this.o.jsonMode === "json_schema"
-          ? { type: "json_schema", json_schema: { name: "investment_decision", schema, strict: false } }
+          ? { type: "json_schema", json_schema: { name: "investment_decision", schema, strict: this.o.strict ?? true } }
           : { type: "json_object" },
     };
     let res: Response;
@@ -84,7 +91,12 @@ export class OpenAiCompatibleProvider implements AiProvider {
     if (choice.message?.refusal) return { ok: false, refusal: String(choice.message.refusal), ...usage };
     if (choice.finish_reason === "length") return { ok: false, error: "max tokens reached before a complete decision", ...usage };
     if (choice.finish_reason === "content_filter") return { ok: false, refusal: "content filter", ...usage };
-    const content = String(choice.message?.content ?? "")
+    const rawContent = choice.message?.content;
+    // Some compatible hosts return content as an array of parts.
+    const contentText = Array.isArray(rawContent)
+      ? rawContent.map((p: any) => (typeof p === "string" ? p : typeof p?.text === "string" ? p.text : "")).join("")
+      : String(rawContent ?? "");
+    const content = contentText
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/```\s*$/, "")
       .trim();

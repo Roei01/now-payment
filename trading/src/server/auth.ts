@@ -9,6 +9,7 @@ import {
   generateTotpSecret,
   hashPassword,
   hmac,
+  matchTotp,
   randomToken,
   safeEqual,
   totpUri,
@@ -29,11 +30,18 @@ export interface SessionUser {
 declare module "fastify" {
   interface FastifyRequest {
     user?: SessionUser;
+    /** A TOTP time-step claimed by requireMfa; released again if the request fails. */
+    mfaClaim?: { key: string; counter: number; prev: unknown };
   }
 }
 
 const SESSION_COOKIE = "sid";
 const SESSION_DAYS = 7;
+const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
+/** Failed attempts (password, login 2FA, step-up 2FA) allowed per key in the window. */
+const MAX_FAILURES = 5;
+const FAILURE_WINDOW = "15 minutes";
+const SETUP_LOCK = 7_100_010;
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -43,6 +51,53 @@ export class HttpError extends Error {
 
 function tokenHash(token: string) {
   return hmac(config().APP_SECRET, `session:${token}`);
+}
+
+let dummyHash: string | undefined;
+/** Verifies against a throw-away hash when the user does not exist, so response time does not reveal registered e-mails. */
+function verifyPasswordConstantTime(password: string, stored: string | undefined): boolean {
+  if (stored) return verifyPassword(password, stored);
+  dummyHash ??= hashPassword(randomToken(16));
+  verifyPassword(password, dummyHash);
+  return false;
+}
+
+/**
+ * Records an attempt as failed *before* checking the credential, then counts failures up to and including it.
+ * Concurrent requests therefore cannot all slip under the limit (check-then-insert race). Returns the attempt id.
+ */
+async function beginAttempt(pool: pg.Pool, key: string, ip: string): Promise<number> {
+  const row = await maybeOne<{ id: number }>(pool, "INSERT INTO login_attempts (email, ip, success) VALUES ($1, $2, false) RETURNING id", [key, ip]);
+  const fails = await maybeOne<{ n: number }>(
+    pool,
+    `SELECT COUNT(*)::int AS n FROM login_attempts WHERE email = $1 AND success = false AND at > now() - interval '${FAILURE_WINDOW}' AND id <= $2`,
+    [key, row!.id],
+  );
+  if ((fails?.n ?? 0) > MAX_FAILURES) {
+    await query(pool, "DELETE FROM login_attempts WHERE id = $1", [row!.id]);
+    throw new HttpError(429, "too many failed attempts, try again later");
+  }
+  return row!.id;
+}
+
+const markAttempt = (pool: pg.Pool, id: number, success: boolean) =>
+  success ? query(pool, "UPDATE login_attempts SET success = true WHERE id = $1", [id]) : Promise.resolve([]);
+const dropAttempt = (pool: pg.Pool, id: number) => query(pool, "DELETE FROM login_attempts WHERE id = $1", [id]);
+
+/** Atomically marks a TOTP time step as used for a scope; false if it (or a later one) was already used. */
+async function claimTotp(pool: pg.Pool, req: FastifyRequest | undefined, userId: string, scope: string, counter: number): Promise<boolean> {
+  const key = `totp_used:${userId}:${scope}`;
+  const prev = (await maybeOne<{ value: unknown }>(pool, "SELECT value FROM system_state WHERE key = $1", [key]))?.value ?? null;
+  const rows = await query(
+    pool,
+    `INSERT INTO system_state (key, value, updated_by) VALUES ($1, jsonb_build_object('counter', $2::bigint), 'auth')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+      WHERE (system_state.value->>'counter')::bigint < $2::bigint RETURNING key`,
+    [key, counter],
+  );
+  if (rows.length === 0) return false;
+  if (req) req.mfaClaim = { key, counter, prev };
+  return true;
 }
 
 async function createSession(pool: pg.Pool, reply: FastifyReply, req: FastifyRequest, userId: string) {
@@ -59,7 +114,7 @@ async function createSession(pool: pg.Pool, reply: FastifyReply, req: FastifyReq
   return csrf;
 }
 
-/** Loads the session user; enforces CSRF on state-changing requests. */
+/** Loads the session user; enforces CSRF on state-changing requests and the owner role on every mutating non-auth API route. */
 export function registerAuthHooks(app: FastifyInstance, pool: pg.Pool) {
   app.addHook("preHandler", async (req) => {
     const token = req.cookies[SESSION_COOKIE];
@@ -73,10 +128,30 @@ export function registerAuthHooks(app: FastifyInstance, pool: pg.Pool) {
     if (!row) return;
     req.user = row;
     await query(pool, "UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1", [tokenHash(token)]);
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    if (!SAFE_METHODS.includes(req.method)) {
       const header = String(req.headers["x-csrf-token"] ?? "");
       if (!header || !safeEqual(header, row.csrf_token)) throw new HttpError(403, "CSRF token missing or invalid");
     }
+  });
+
+  // Defense in depth: only the owner may call a mutating API route (auth routes check their own rules).
+  app.addHook("preHandler", async (req) => {
+    if (SAFE_METHODS.includes(req.method)) return;
+    const url = req.routeOptions.url ?? req.url;
+    if (!url.startsWith("/api/") || url.startsWith("/api/auth/")) return;
+    requireOwner(req);
+  });
+
+  // A step-up code is single-use per action; if the action itself fails, the claim is released so the owner can retry.
+  app.addHook("onSend", async (req, reply, payload) => {
+    const claim = req.mfaClaim;
+    if (claim && reply.statusCode >= 400) {
+      req.mfaClaim = undefined;
+      if (claim.prev === null) await query(pool, "DELETE FROM system_state WHERE key = $1 AND (value->>'counter')::bigint = $2", [claim.key, claim.counter]);
+      else
+        await query(pool, "UPDATE system_state SET value = $3 WHERE key = $1 AND (value->>'counter')::bigint = $2", [claim.key, claim.counter, JSON.stringify(claim.prev)]);
+    }
+    return payload;
   });
 }
 
@@ -91,56 +166,75 @@ export function requireOwner(req: FastifyRequest): SessionUser {
   return u;
 }
 
-/** Step-up: sensitive actions need a fresh TOTP code, and 2FA must be enabled. */
-export function requireMfa(req: FastifyRequest, code: string | undefined): SessionUser {
+/**
+ * Step-up: sensitive actions need a fresh TOTP code, and 2FA must be enabled.
+ * Wrong codes are rate limited (brute force), and a code cannot be replayed for the same action.
+ */
+export async function requireMfa(pool: pg.Pool, req: FastifyRequest, code: string | undefined): Promise<SessionUser> {
   const u = requireOwner(req);
   if (!u.totp_enabled || !u.totp_secret_enc) throw new HttpError(403, "enable 2FA before performing this action");
-  const secret = decryptSecret(u.totp_secret_enc, config().APP_SECRET);
-  if (!code || !verifyTotp(secret, code)) throw new HttpError(403, "invalid 2FA code");
+  if (!code) throw new HttpError(403, "invalid 2FA code");
+  const attempt = await beginAttempt(pool, `mfa:${u.id}`, req.ip);
+  const counter = matchTotp(decryptSecret(u.totp_secret_enc, config().APP_SECRET), code);
+  if (counter === null) throw new HttpError(403, "invalid 2FA code");
+  await markAttempt(pool, attempt, true);
+  const scope = `${req.method} ${req.routeOptions.url ?? req.url}`;
+  if (!(await claimTotp(pool, req, u.id, scope, counter))) throw new HttpError(403, "2FA code already used — wait for the next code");
   return u;
 }
 
-const LoginBody = z.object({ email: z.string().email(), password: z.string().min(1), totp: z.string().optional() });
-const SetupBody = z.object({ setupToken: z.string(), email: z.string().email(), password: z.string().min(12) });
+const LoginBody = z.object({ email: z.string().trim().email(), password: z.string().min(1), totp: z.string().optional() });
+const SetupBody = z.object({ setupToken: z.string(), email: z.string().trim().email(), password: z.string().min(12) });
 
 export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
   app.post("/api/auth/setup", async (req, reply) => {
     const body = SetupBody.parse(req.body);
     const c = config();
     if (!c.SETUP_TOKEN || !safeEqual(body.setupToken, c.SETUP_TOKEN)) throw new HttpError(403, "invalid setup token");
-    const exists = await maybeOne(pool, "SELECT 1 FROM users LIMIT 1");
-    if (exists) throw new HttpError(409, "already set up");
-    const u = await maybeOne<{ id: string }>(pool, "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'owner') RETURNING id", [
-      body.email.toLowerCase(),
-      hashPassword(body.password),
-    ]);
-    await audit(pool, body.email, "auth.setup", u!.id, {}, req.ip);
-    const csrf = await createSession(pool, reply, req, u!.id);
+    // Serialize concurrent setup calls so exactly one owner can ever be created.
+    const client = await pool.connect();
+    let userId: string;
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock($1)", [SETUP_LOCK]);
+      const exists = await maybeOne(client, "SELECT 1 FROM users LIMIT 1");
+      if (exists) throw new HttpError(409, "already set up");
+      const u = await maybeOne<{ id: string }>(client, "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'owner') RETURNING id", [
+        body.email.toLowerCase(),
+        hashPassword(body.password),
+      ]);
+      await client.query("COMMIT");
+      userId = u!.id;
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+    await audit(pool, body.email, "auth.setup", userId, {}, req.ip);
+    const csrf = await createSession(pool, reply, req, userId);
     return { ok: true, csrf };
   });
 
   app.post("/api/auth/login", async (req, reply) => {
     const body = LoginBody.parse(req.body);
     const email = body.email.toLowerCase();
-    const fails = await maybeOne<{ n: number }>(
-      pool,
-      "SELECT COUNT(*)::int AS n FROM login_attempts WHERE email = $1 AND success = false AND at > now() - interval '15 minutes'",
-      [email],
-    );
-    if ((fails?.n ?? 0) >= 5) throw new HttpError(429, "too many failed attempts, try again later");
+    const attempt = await beginAttempt(pool, email, req.ip);
     const u = await maybeOne<{ id: string; password_hash: string; totp_enabled: boolean; totp_secret_enc: string | null }>(
       pool,
       "SELECT id, password_hash, totp_enabled, totp_secret_enc FROM users WHERE email = $1",
       [email],
     );
-    let ok = !!u && verifyPassword(body.password, u.password_hash);
+    let ok = verifyPasswordConstantTime(body.password, u?.password_hash) && !!u;
     if (ok && u!.totp_enabled) {
       if (!body.totp) {
+        await dropAttempt(pool, attempt);
         return reply.code(401).send({ error: "2FA code required", needTotp: true });
       }
-      ok = verifyTotp(decryptSecret(u!.totp_secret_enc!, config().APP_SECRET), body.totp);
+      const counter = matchTotp(decryptSecret(u!.totp_secret_enc!, config().APP_SECRET), body.totp);
+      ok = counter !== null && (await claimTotp(pool, undefined, u!.id, "login", counter));
     }
-    await query(pool, "INSERT INTO login_attempts (email, ip, success) VALUES ($1, $2, $3)", [email, req.ip, ok]);
+    await markAttempt(pool, attempt, ok);
     if (!ok) throw new HttpError(401, "invalid credentials");
     await audit(pool, email, "auth.login", u!.id, {}, req.ip);
     const csrf = await createSession(pool, reply, req, u!.id);
@@ -163,8 +257,11 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
   app.post("/api/auth/password", async (req, reply) => {
     const u = requireUser(req);
     const body = z.object({ current: z.string().min(1), next: z.string().min(12) }).parse(req.body);
+    // A stolen session must not be able to brute-force the current password.
+    const attempt = await beginAttempt(pool, `password:${u.id}`, req.ip);
     const row = await maybeOne<{ password_hash: string }>(pool, "SELECT password_hash FROM users WHERE id = $1", [u.id]);
     if (!row || !verifyPassword(body.current, row.password_hash)) throw new HttpError(403, "הסיסמה הנוכחית שגויה");
+    await markAttempt(pool, attempt, true);
     await query(pool, "UPDATE users SET password_hash = $2 WHERE id = $1", [u.id, hashPassword(body.next)]);
     // Sign out every other session.
     const token = req.cookies[SESSION_COOKIE];

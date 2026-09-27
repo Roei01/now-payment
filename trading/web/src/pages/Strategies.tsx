@@ -262,9 +262,13 @@ export function Strategies({ me }: { me: Me }) {
                   <button
                     className="btn sm"
                     onClick={async () => {
-                      await api(`/api/lessons/${l.id}`, { method: "PATCH", body: { status: "APPROVED" } });
-                      ui.toast("הלקח אושר");
-                      reload();
+                      try {
+                        await api(`/api/lessons/${l.id}`, { method: "PATCH", body: { status: "APPROVED" } });
+                        ui.toast("הלקח אושר");
+                        reload();
+                      } catch (e) {
+                        ui.toast((e as Error).message, "bad");
+                      }
                     }}
                   >
                     אישור

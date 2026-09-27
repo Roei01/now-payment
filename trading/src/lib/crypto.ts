@@ -114,11 +114,17 @@ export function totpCode(secretB32: string, timeMs: number = Date.now(), step = 
 }
 
 export function verifyTotp(secretB32: string, code: string, timeMs: number = Date.now(), window = 1): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
+  return matchTotp(secretB32, code, timeMs, window) !== null;
+}
+
+/** Like verifyTotp, but returns the matched 30 s time-step counter (for single-use enforcement), or null. */
+export function matchTotp(secretB32: string, code: string, timeMs: number = Date.now(), window = 1): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
   for (let w = -window; w <= window; w++) {
-    if (safeEqual(totpCode(secretB32, timeMs + w * 30_000), code)) return true;
+    const t = timeMs + w * 30_000;
+    if (safeEqual(totpCode(secretB32, t), code)) return Math.floor(t / 1000 / 30);
   }
-  return false;
+  return null;
 }
 
 export function totpUri(secretB32: string, account: string, issuer = "PaperLiveTrading"): string {

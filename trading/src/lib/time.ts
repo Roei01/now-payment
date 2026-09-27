@@ -1,16 +1,28 @@
 /** Wall-clock parts of an instant in a given IANA time zone. */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Intl formatters are expensive to build; one per time zone is reused. */
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  let f = formatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+      weekday: "short",
+    });
+    formatters.set(timeZone, f);
+  }
+  return f;
+}
+
 export function zonedParts(date: Date, timeZone: string) {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    weekday: "short",
-  });
+  const fmt = formatterFor(timeZone);
   const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
   return {
     year: Number(parts.year),

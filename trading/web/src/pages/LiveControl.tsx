@@ -174,7 +174,7 @@ export function LiveControl({ me }: { me: Me }) {
       <Card i={0}>
         <div className="card-head">
           <div className="grow">
-            <h3>{p.name}</h3>
+            <h2>{p.name}</h2>
             <div className="desc">{assignment ? `${assignment.name} · גרסה ${assignment.version}` : "תשויך אסטרטגיה בעת מעבר לדרוך"}</div>
           </div>
           <Badge value={p.status} live={p.status === "PILOT" || p.status === "ACTIVE"} />

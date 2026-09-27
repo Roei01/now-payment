@@ -12,6 +12,7 @@ import { registerReadRoutes } from "./routes/read.js";
 import { registerActionRoutes } from "./routes/actions.js";
 import { log } from "../lib/logger.js";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 export async function buildApp(pool: pg.Pool, opts: { serveWeb?: boolean } = {}): Promise<FastifyInstance> {
@@ -27,10 +28,21 @@ export async function buildApp(pool: pg.Pool, opts: { serveWeb?: boolean } = {})
     return payload;
   });
 
+  // Every `:id` route parameter is a UUID; reject anything else before it reaches SQL (was a 500).
+  app.addHook("preValidation", async (req) => {
+    const id = (req.params as Record<string, unknown> | undefined)?.id;
+    if (typeof id === "string" && !UUID.test(id)) throw new HttpError(400, "invalid id");
+  });
+
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof HttpError) return reply.code(err.status).send({ error: err.message });
     if (err instanceof ZodError) return reply.code(400).send({ error: "invalid request", issues: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
-    const e = err as { statusCode?: number; message?: string };
+    const e = err as { statusCode?: number; message?: string; code?: unknown; severity?: unknown };
+    // Postgres data (22xxx) / integrity (23xxx) errors are client mistakes (bad reference, bad value): 4xx, without DB details.
+    if (typeof e.code === "string" && typeof e.severity === "string" && /^2[23]/.test(e.code)) {
+      log.warn("rejected API request (database constraint)", { sqlstate: e.code, error: e.message });
+      return reply.code(e.code.startsWith("23505") ? 409 : 400).send({ error: "invalid request" });
+    }
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: e.message });
     log.error("unhandled API error", { error: e.message });
     return reply.code(500).send({ error: "internal error" });

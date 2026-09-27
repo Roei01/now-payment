@@ -4,3 +4,4 @@ web/dist
 .env
 .env.local
 coverage
+e2e/out

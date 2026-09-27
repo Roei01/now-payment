@@ -164,6 +164,10 @@ function evaluateQty(ctx: RiskContext, p: OrderProposal, qty: Decimal, px: numbe
     const sellable = sellableQty(state, p.symbol);
     if (qty.greaterThan(sellable))
       reasons.push({ code: "SELL_EXCEEDS_HOLDINGS", message: `sell ${qty} > unreserved holdings ${sellable} (no short selling)` });
+    // A fixed commission larger than the proceeds (plus free cash) would leave a negative balance.
+    const worstProceeds = notional.times(1 - policy.costs.slippageBps / 10_000);
+    if (availableCash(state).plus(worstProceeds).minus(fee).isNegative())
+      reasons.push({ code: "INSUFFICIENT_CASH", message: `sell fee ${fee.toFixed(2)} exceeds proceeds ${worstProceeds.toFixed(2)} plus available cash` });
     return { ok: reasons.length === 0, reasons, metrics, reservedCash };
   }
 
@@ -257,7 +261,8 @@ export function checkOrder(ctx: RiskContext, p: OrderProposal): RiskResult {
     if (D(px).lessThan(avgCost.times(1 - policy.losingPositionThresholdPct)) && !p.addToLoserJustification)
       reasons.push({ code: "AVERAGING_DOWN_BLOCKED", message: `${p.symbol} is below average cost; adding requires an explicit justification` });
   }
-  if (reasons.length > 0 || !asset || px === undefined) return reject([], px ?? 0);
+  if (px !== undefined && !(Number.isFinite(px) && px > 0)) reasons.push({ code: "INVALID_PRICE", message: `${p.symbol}: unusable quote price ${px}` });
+  if (reasons.length > 0 || !asset || px === undefined) return reject([], Number.isFinite(px) ? px! : 0);
 
   const first = evaluateQty(ctx, p, p.qty, px, asset);
   if (first.ok) return { result: "ALLOW", approvedQty: p.qty, estPrice: px, reservedCash: first.reservedCash, reasons: [], metrics: first.metrics };

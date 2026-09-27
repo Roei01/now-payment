@@ -151,9 +151,13 @@ export async function runManager(
   };
   const user = `Data package (JSON):\n${JSON.stringify(pkg)}`;
 
-  const maxTokens = 8000;
+  // Adaptive thinking tokens count against max_tokens; 8k was often exhausted by thinking
+  // at effort "high", which truncates the JSON and wastes the whole call.
+  const maxTokens = 16000;
   const estInputTokens = Math.ceil((MANAGER_SYSTEM_PROMPT.length + user.length) / 3) + 1500;
-  const worstUsd = costUsd(deps.model, estInputTokens, maxTokens);
+  // A server-side refusal fallback can bill a partial attempt plus the fallback attempt.
+  const attempts = deps.provider.name === "anthropic" ? 2 : 1;
+  const worstUsd = costUsd(deps.model, estInputTokens, maxTokens) * attempts;
   const worstIls = worstUsd * snapshot.fx.rate;
   const reserve = await reserveAiSpend(db, deps.budget, worstIls);
   if (!reserve.ok) return { status: "DEFERRED", reason: `תקציב: ${reserve.reason === "AI monthly budget would be exceeded" ? "תקרת ה־AI החודשית תיחרג" : "תקרת התפעול החודשית תיחרג"}`, sources, costIls: 0 };
@@ -167,17 +171,23 @@ export async function runManager(
     maxTokens,
     effort: "high",
   });
-  const usd = costUsd(res.modelServed, res.inputTokens, res.outputTokens);
-  if (res.inputTokens + res.outputTokens > 0)
+  // A refusal fallback bills each model that ran at its own rate.
+  const usageRows = res.usageByModel ?? [{ model: res.modelServed, inputTokens: res.inputTokens, outputTokens: res.outputTokens }];
+  let usd = 0;
+  for (const u of usageRows) {
+    if (u.inputTokens + u.outputTokens === 0) continue;
+    const rowUsd = costUsd(u.model, u.inputTokens, u.outputTokens);
+    usd += rowUsd;
     await recordCost(db, {
       category: "AI",
       provider: deps.provider.name,
-      model: res.modelServed,
-      usd,
+      model: u.model,
+      usd: rowUsd,
       fxRate: snapshot.fx.rate,
-      units: { input_tokens: res.inputTokens, output_tokens: res.outputTokens, price: priceOf(res.modelServed) },
+      units: { input_tokens: u.inputTokens, output_tokens: u.outputTokens, price: priceOf(u.model) },
       reference: `manager:${asset.symbol}`,
     });
+  }
   const costIls = usd * snapshot.fx.rate;
   const base = { promptVersionId: pvId, model: res.modelServed, sources, costIls };
   if (!res.ok) return { status: "DEFERRED", reason: res.refusal ? `המודל סירב: ${res.refusal}` : `קריאה למודל נכשלה: ${res.error}`, ...base };

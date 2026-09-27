@@ -16,6 +16,12 @@ function TwoFactor({ me, onChange }: { me: Me; onChange: () => void }) {
         פעולות רגישות מאומתות בקוד מהאפליקציה.
       </Alert>
     );
+  if (me.role !== "owner")
+    return (
+      <Alert tone="info" title="אימות דו־שלבי כבוי" icon="shield">
+        חשבון צפייה בלבד אינו מבצע פעולות רגישות.
+      </Alert>
+    );
   return (
     <div className="stack" style={{ gap: 12 }}>
       <Alert tone="warn" title="אימות דו־שלבי כבוי">
@@ -23,7 +29,13 @@ function TwoFactor({ me, onChange }: { me: Me; onChange: () => void }) {
       </Alert>
       {!setup ? (
         <div className="actions">
-          <button className="btn primary" onClick={async () => setSetup(await api("/api/auth/totp/setup", { method: "POST", body: {} }))}>
+          <button className="btn primary" onClick={async () => {
+              try {
+                setSetup(await api("/api/auth/totp/setup", { method: "POST", body: {} }));
+              } catch (e) {
+                ui.toast((e as Error).message, "bad");
+              }
+            }}>
             <Icon name="shield" /> הפעלת אימות דו־שלבי
           </button>
         </div>
@@ -163,7 +175,7 @@ export function Settings({ me, onChange }: { me: Me; onChange: () => void }) {
           <button
             className="btn ghost"
             onClick={async () => {
-              await api("/api/auth/logout", { method: "POST", body: {} });
+              await api("/api/auth/logout", { method: "POST", body: {} }).catch(() => undefined);
               location.reload();
             }}
           >

@@ -91,7 +91,7 @@ export function PortfolioDetail({ id, me }: { id: string; me: Me }) {
       <Card i={0}>
         <div className="card-head">
           <div className="grow">
-            <h3>{p.name}</h3>
+            <h2>{p.name}</h2>
             <div className="desc">
               {t(p.execution_venue)} · נתונים <span className="ltr">{p.data_source ?? "—"}</span> · מאז {day(p.started_at)}
             </div>

@@ -95,7 +95,7 @@ export function Operations({ me }: { me: Me }) {
             </span>
           </div>
           <div className="mt-8">
-            <Progress value={data.budget.monthTotalIls} max={data.budget.opsCapIls} />
+            <Progress label="ניצול תקרת התפעול החודשית" value={data.budget.monthTotalIls} max={data.budget.opsCapIls} />
           </div>
           <div className="xsmall muted mt-8">
             AI {ils(data.budget.monthAiIls)} מתוך {ils(data.budget.aiBudgetIls, 0)} · שרת (הערכה) {ils(data.budget.infraEstimateIls, 0)}
@@ -144,9 +144,13 @@ export function Operations({ me }: { me: Me }) {
                   <button
                     className="btn sm"
                     onClick={async () => {
-                      await api(`/api/incidents/${i.id}/resolve`, { method: "POST", body: {} });
-                      ui.toast("התקלה סומנה כסגורה");
-                      reload();
+                      try {
+                        await api(`/api/incidents/${i.id}/resolve`, { method: "POST", body: {} });
+                        ui.toast("התקלה סומנה כסגורה");
+                        reload();
+                      } catch (e) {
+                        ui.toast((e as Error).message, "bad");
+                      }
                     }}
                   >
                     סגירה

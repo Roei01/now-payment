@@ -109,7 +109,7 @@ export function Overview({ me }: { me: Me }) {
             <a key={p.id} href={`#/portfolio/${p.id}`} className="card" style={{ ["--i" as string]: i + 1 }}>
               <div className="card-head">
                 <div className="grow">
-                  <h3>{p.name}</h3>
+                  <h2>{p.name}</h2>
                   <div className="desc">
                     {p.strategy_name ?? "—"} · גרסה {p.strategy_version ?? "—"}
                   </div>
@@ -152,7 +152,7 @@ export function Overview({ me }: { me: Me }) {
         <a href="#/live" className="card" style={{ ["--i" as string]: 5 }}>
           <div className="card-head">
             <div className="grow">
-              <h3>{live.name}</h3>
+              <h2>{live.name}</h2>
               <div className="desc">{live.strategy_name ? `${live.strategy_name} · גרסה ${live.strategy_version}` : "טרם שויכה אסטרטגיה"}</div>
             </div>
             <Badge value={live.status} live={live.status === "PILOT" || live.status === "ACTIVE"} />
@@ -177,7 +177,7 @@ export function Overview({ me }: { me: Me }) {
                 </span>
               </div>
               <div className="mt-8">
-                <Progress value={budget.monthTotalIls} max={budget.opsCapIls} />
+                <Progress label="ניצול תקרת התפעול החודשית" value={budget.monthTotalIls} max={budget.opsCapIls} />
               </div>
             </div>
             <div>
@@ -188,7 +188,7 @@ export function Overview({ me }: { me: Me }) {
                 </span>
               </div>
               <div className="mt-8">
-                <Progress value={budget.monthAiIls} max={budget.aiBudgetIls} />
+                <Progress label="ניצול תקציב ה־AI החודשי" value={budget.monthAiIls} max={budget.aiBudgetIls} />
               </div>
             </div>
           </div>

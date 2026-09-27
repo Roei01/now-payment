@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+import { z } from "zod";
 import { query, maybeOne } from "../../db/pool.js";
 import { HttpError, requireUser } from "../auth.js";
 import { getKillSwitch, getMaintenance } from "../../ops/systemState.js";
@@ -120,16 +121,23 @@ export function registerReadRoutes(app: FastifyInstance, pool: pg.Pool) {
     return { portfolio: p, runs, dataSourceIncident, performance, benchmark, snapshot, trades, openOrders, decisions, assignments, ledger, pnlBySymbol, gate };
   });
 
-  app.get<{ Querystring: { portfolioId?: string; limit?: string; status?: string } }>("/api/decisions", async (req) => {
+  const DecisionsQuery = z.object({
+    portfolioId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    status: z.string().max(40).optional(),
+  });
+
+  app.get("/api/decisions", async (req) => {
     requireUser(req);
-    const limit = Math.min(200, Number(req.query.limit ?? 50));
+    const q = DecisionsQuery.parse(req.query);
+    const limit = q.limit;
     return query(
       pool,
       `SELECT d.id, d.action, d.status, d.rationale, d.created_at, d.model_version, p.code AS portfolio_code, p.name AS portfolio_name
          FROM decisions d JOIN portfolios p ON p.id = d.portfolio_id
         WHERE ($1::uuid IS NULL OR d.portfolio_id = $1) AND ($2::text IS NULL OR d.status = $2)
         ORDER BY d.created_at DESC LIMIT $3`,
-      [req.query.portfolioId ?? null, req.query.status ?? null, limit],
+      [q.portfolioId ?? null, q.status ?? null, limit],
     );
   });
 

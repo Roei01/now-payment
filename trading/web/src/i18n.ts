@@ -79,6 +79,7 @@ const DICT: Record<string, string> = {
   MARKET_CLOSED: "השוק סגור",
   NO_QUOTE: "אין מחיר עדכני",
   STALE_QUOTE: "מחיר ישן",
+  INVALID_PRICE: "מחיר לא תקין",
   STALE_DATA: "נתונים ישנים",
   AVERAGING_DOWN_BLOCKED: "מיצוע כלפי מטה חסום",
   BELOW_MIN_ORDER: "מתחת לפקודה מינימלית",
@@ -224,3 +225,27 @@ const TONES: Record<string, Tone> = {
 };
 
 export const tone = (code: unknown): Tone => TONES[String(code)] ?? "neutral";
+
+/** Hebrew text for API error messages (server errors are English codes/phrases). Unknown messages pass through. */
+const API_ERRORS: [RegExp, string][] = [
+  [/^invalid setup token$/, "קוד ההקמה שגוי"],
+  [/^already set up$/, "המערכת כבר הוקמה. היכנסו עם החשבון הקיים."],
+  [/^invalid credentials$/, "פרטי הכניסה שגויים"],
+  [/^too many failed attempts/, "יותר מדי ניסיונות. נסו שוב בעוד רבע שעה."],
+  [/^not authenticated$/, "פג תוקף ההתחברות. היכנסו שוב."],
+  [/^CSRF token missing or invalid$/, "פג תוקף ההתחברות. רעננו את הדף."],
+  [/^owner role required$/, "הפעולה זמינה לבעלים בלבד"],
+  [/^enable 2FA before performing this action$/, "יש להפעיל אימות דו־שלבי לפני פעולה זו (בהגדרות)"],
+  [/^invalid 2FA code$|^invalid code$/, "קוד האימות שגוי או שפג תוקפו"],
+  [/^run 2FA setup first$/, "יש להתחיל את הגדרת האימות הדו־שלבי מחדש"],
+  [/^2FA already enabled$/, "אימות דו־שלבי כבר פעיל"],
+  [/^a cycle is already running$/, "מחזור כבר רץ כרגע. נסו שוב בעוד רגע."],
+  [/not found$/, "לא נמצא"],
+  [/^invalid request$/, "הנתונים שהוזנו אינם תקינים"],
+  [/^internal error$/, "שגיאת שרת. נסו שוב."],
+  [/^Failed to fetch$|NetworkError|Load failed/, "אין חיבור לשרת"],
+];
+export function apiError(message: string): string {
+  for (const [re, he] of API_ERRORS) if (re.test(message)) return he;
+  return explain(message);
+}

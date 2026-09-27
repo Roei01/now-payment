@@ -52,7 +52,7 @@ export function Card({ title, desc, action, children, i, className }: { title?: 
       {(title || action) && (
         <div className="card-head">
           <div className="grow">
-            {title && <h3>{title}</h3>}
+            {title && <h2>{title}</h2>}
             {desc && <div className="desc">{desc}</div>}
           </div>
           {action}
@@ -157,10 +157,10 @@ export function Segmented<V extends string>({ value, options, onChange, label }:
   );
 }
 
-export function Progress({ value, max, danger = 0.9, warn = 0.75 }: { value: number; max: number; danger?: number; warn?: number }) {
+export function Progress({ value, max, label, danger = 0.9, warn = 0.75 }: { value: number; max: number; label: string; danger?: number; warn?: number }) {
   const r = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
   return (
-    <div className={`progress ${r >= danger ? "bad" : r >= warn ? "warn" : ""}`} role="progressbar" aria-valuenow={Math.round(r * 100)} aria-valuemin={0} aria-valuemax={100}>
+    <div className={`progress ${r >= danger ? "bad" : r >= warn ? "warn" : ""}`} role="progressbar" aria-label={label} aria-valuenow={Math.round(r * 100)} aria-valuemin={0} aria-valuemax={100}>
       <i style={{ width: `${r * 100}%` }} />
     </div>
   );

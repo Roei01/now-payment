@@ -17,6 +17,8 @@ interface Preset {
   baseUrl?: string;
   jsonMode?: "json_schema" | "json_object";
   maxTokensParam?: "max_tokens" | "max_completion_tokens";
+  /** json_schema strict flag; hosts that do not implement strict get false. */
+  strict?: boolean;
   keyRequired: boolean;
   exampleModel: string;
   extraHeaders?: Record<string, string>;
@@ -40,14 +42,14 @@ export const AI_PRESETS: Record<string, Preset> = {
     exampleModel: "meta-llama/<model>",
     extraHeaders: { "X-Title": "paper-live-trading" },
   },
-  google: { label: "Google Gemini (OpenAI-compatible endpoint)", kind: "openai-compatible", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", jsonMode: "json_schema", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "<gemini model id>" },
-  groq: { label: "Groq (Llama and others)", kind: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "<groq model id>" },
+  google: { label: "Google Gemini (OpenAI-compatible endpoint)", kind: "openai-compatible", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", jsonMode: "json_schema", maxTokensParam: "max_tokens", strict: false, keyRequired: true, exampleModel: "<gemini model id>" },
+  groq: { label: "Groq (Llama and others)", kind: "openai-compatible", baseUrl: "https://api.groq.com/openai/v1", jsonMode: "json_object", maxTokensParam: "max_completion_tokens", keyRequired: true, exampleModel: "<groq model id>" },
   together: { label: "Together AI (Llama and others)", kind: "openai-compatible", baseUrl: "https://api.together.xyz/v1", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "meta-llama/<model>" },
   mistral: { label: "Mistral", kind: "openai-compatible", baseUrl: "https://api.mistral.ai/v1", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "<mistral model id>" },
   deepseek: { label: "DeepSeek", kind: "openai-compatible", baseUrl: "https://api.deepseek.com/v1", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "<deepseek model id>" },
   xai: { label: "xAI (Grok)", kind: "openai-compatible", baseUrl: "https://api.x.ai/v1", jsonMode: "json_schema", maxTokensParam: "max_tokens", keyRequired: true, exampleModel: "<grok model id>" },
   ollama: { label: "Ollama (local / self-hosted)", kind: "openai-compatible", baseUrl: "http://localhost:11434/v1", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: false, exampleModel: "llama3.1" },
-  "openai-compatible": { label: "Any OpenAI-compatible endpoint (set AI_BASE_URL)", kind: "openai-compatible", jsonMode: "json_object", maxTokensParam: "max_tokens", keyRequired: false, exampleModel: "<model id>" },
+  "openai-compatible": { label: "Any OpenAI-compatible endpoint (set AI_BASE_URL)", kind: "openai-compatible", jsonMode: "json_object", maxTokensParam: "max_tokens", strict: false, keyRequired: false, exampleModel: "<model id>" },
 };
 
 export type AiProviderId = keyof typeof AI_PRESETS | "none";
@@ -71,6 +73,7 @@ export function createAiProvider(s: AiSettings, fetchImpl?: typeof fetch): { pro
       apiKey: s.apiKey,
       jsonMode: s.jsonMode ?? preset.jsonMode ?? "json_object",
       maxTokensParam: preset.maxTokensParam ?? "max_tokens",
+      strict: preset.strict,
       extraHeaders: preset.extraHeaders,
       fetchImpl,
     }),

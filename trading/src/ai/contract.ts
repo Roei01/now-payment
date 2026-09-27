@@ -32,8 +32,52 @@ export const ManagerDecisionSchema = z.object({
 
 export type ManagerDecision = z.infer<typeof ManagerDecisionSchema>;
 
-/** JSON schema sent as output_config.format (kept in sync with the zod schema above). */
-export const MANAGER_JSON_SCHEMA = z.toJSONSchema(ManagerDecisionSchema, { target: "draft-7" });
+/**
+ * Keywords that constrained-decoding APIs reject or ignore. Anthropic structured outputs
+ * do not support numeric (minimum, maximum, exclusiveMinimum, multipleOf) or string-length
+ * constraints, nor complex array constraints; OpenAI strict mode rejects several of
+ * them too. They are enforced in code by ManagerDecisionSchema.safeParse instead.
+ */
+const UNPORTABLE_KEYWORDS = new Set([
+  "$schema",
+  "$id",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
+  "default",
+]);
+
+/** Recursively strips keywords that structured-output APIs do not accept. Idempotent. */
+export function toPortableJsonSchema(schema: unknown): Record<string, unknown> {
+  const walk = (node: unknown, inProperties: boolean): unknown => {
+    if (Array.isArray(node)) return node.map((n) => walk(n, false));
+    if (!node || typeof node !== "object") return node;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      // Inside "properties" the keys are field names, not keywords.
+      if (!inProperties && UNPORTABLE_KEYWORDS.has(k)) continue;
+      out[k] = walk(v, !inProperties && k === "properties");
+    }
+    return out;
+  };
+  return walk(schema, false) as Record<string, unknown>;
+}
+
+/**
+ * JSON schema sent as output_config.format / response_format (kept in sync with the zod
+ * schema above). Range constraints are dropped here and validated in code.
+ */
+export const MANAGER_JSON_SCHEMA = toPortableJsonSchema(z.toJSONSchema(ManagerDecisionSchema, { target: "draft-7" }));
 
 export interface ContractCheck {
   ok: boolean;

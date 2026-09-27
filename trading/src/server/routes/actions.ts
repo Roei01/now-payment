@@ -19,12 +19,20 @@ import type { PortfolioRow } from "../../portfolio/state.js";
 
 const Totp = z.string().regex(/^\d{6}$/).optional();
 
+/** Domain errors become 400 with their message; database errors are passed to the error handler so their text never reaches the client. */
+function badRequest(err: unknown): Error {
+  if (err instanceof HttpError) return err;
+  const e = err as { code?: unknown; severity?: unknown };
+  if (typeof e?.code === "string" && typeof e?.severity === "string") return err as Error;
+  return new HttpError(400, (err as Error).message);
+}
+
 export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
   // ---------------------------------------------------------------- kill switch
   app.post("/api/control/kill-switch", async (req) => {
     const body = z.object({ active: z.boolean(), reason: z.string().min(3), totp: Totp }).parse(req.body);
     // Engaging is always allowed (emergency); releasing requires 2FA.
-    const u = body.active ? requireOwner(req) : requireMfa(req, body.totp);
+    const u = body.active ? requireOwner(req) : await requireMfa(pool, req, body.totp);
     const before = await getKillSwitch(pool);
     await setState(pool, "kill_switch", { active: body.active, reason: body.reason, by: u.email, at: new Date().toISOString() }, u.email);
     await audit(pool, u.email, body.active ? "kill_switch.engage" : "kill_switch.release", null, { reason: body.reason, before }, req.ip);
@@ -50,21 +58,21 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const body = z.object({ reason: z.string().min(3), totp: Totp }).parse(req.body);
     const p = await maybeOne<PortfolioRow>(pool, "SELECT * FROM portfolios WHERE id = $1", [req.params.id]);
     if (!p) throw new HttpError(404, "not found");
-    const u = p.kind === "LIVE" ? requireMfa(req, body.totp) : requireOwner(req);
+    const u = p.kind === "LIVE" ? await requireMfa(pool, req, body.totp) : requireOwner(req);
     const status = await resumePortfolio(pool, p.id, u.email, body.reason, p.kind === "LIVE");
     return { ok: true, status };
   });
 
   app.post<{ Params: { id: string } }>("/api/portfolios/:id/new-run", async (req) => {
     const body = z.object({ reason: z.string().min(3), totp: Totp, capitalIls: z.number().positive().optional() }).parse(req.body);
-    const u = requireMfa(req, body.totp);
+    const u = await requireMfa(pool, req, body.totp);
     const deps = cycleDepsFromConfig(pool);
     try {
       const fx = await currentFx(pool, deps.fx);
       const id = await withTx((tx) => startNewRun(tx, { portfolioId: req.params.id, capitalIls: body.capitalIls, fx, dataSource: deps.market.name, actor: u.email, reason: body.reason }));
       return { ok: true, id };
     } catch (err) {
-      throw new HttpError(400, (err as Error).message);
+      throw badRequest(err);
     }
   });
 
@@ -74,7 +82,9 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const p = await maybeOne<PortfolioRow>(pool, "SELECT * FROM portfolios WHERE id = $1", [req.params.id]);
     if (!p) throw new HttpError(404, "not found");
     if (p.kind !== "PAPER") throw new HttpError(400, "only paper portfolios can be re-assigned here (live follows the promotion flow)");
-    const v = await getStrategyVersion(pool, body.strategyVersionId);
+    const v = await getStrategyVersion(pool, body.strategyVersionId).catch((err) => {
+      throw badRequest(err);
+    });
     if (v.code === "BENCHMARK_HOLD") throw new HttpError(400, "benchmark strategy is not a candidate");
     await assignStrategy(pool, p.id, v.id, body.reason, u.email);
     await audit(pool, u.email, "strategy.assign", p.id, { version: v.id, code: v.code, v: v.version, reason: body.reason }, req.ip);
@@ -93,7 +103,11 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const body = z
       .object({ params: z.record(z.string(), z.unknown()), reason: z.string().min(5), universe: z.array(z.string()).optional(), supportingData: z.record(z.string(), z.unknown()).optional() })
       .parse(req.body);
-    const v = await createStrategyVersion(pool, { code: req.params.code, params: body.params, universe: body.universe, reason: body.reason, supportingData: body.supportingData, by: u.email });
+    const v = await createStrategyVersion(pool, { code: req.params.code, params: body.params, universe: body.universe, reason: body.reason, supportingData: body.supportingData, by: u.email }).catch(
+      (err) => {
+        throw badRequest(err);
+      },
+    );
     await audit(pool, u.email, "strategy.version.create", v.id, { code: v.code, version: v.version, reason: body.reason }, req.ip);
     return v;
   });
@@ -140,7 +154,7 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
       const { equity, ...summary } = result;
       return { id, summary, points: equity.length };
     } catch (err) {
-      throw new HttpError(400, (err as Error).message);
+      throw badRequest(err);
     }
   });
 
@@ -155,6 +169,11 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
         validityConditions: z.string().optional(),
       })
       .parse(req.body);
+    const refs = [...body.supportingDecisionIds, ...body.contradictingDecisionIds];
+    if (refs.length) {
+      const found = await query<{ n: number }>(pool, "SELECT COUNT(*)::int AS n FROM decisions WHERE id = ANY($1::uuid[])", [refs]);
+      if (found[0]!.n !== new Set(refs).size) throw new HttpError(400, "unknown decision id in lesson evidence");
+    }
     return maybeOne(
       pool,
       `INSERT INTO research_lessons (text, tags, supporting_decision_ids, contradicting_decision_ids, sample_size, validity_conditions, created_by)
@@ -176,13 +195,14 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const body = z
       .object({ verified: z.boolean(), is_leveraged: z.boolean(), is_inverse: z.boolean(), crypto_exposure: z.boolean(), active: z.boolean(), source: z.string().min(3), totp: Totp })
       .parse(req.body);
-    const u = requireMfa(req, body.totp);
+    const u = await requireMfa(pool, req, body.totp);
     await query(
       pool,
       `UPDATE assets SET verified = $2, is_leveraged = $3, is_inverse = $4, crypto_exposure = $5, active = $6, verified_source = $7, verified_at = now() WHERE id = $1`,
       [req.params.id, body.verified, body.is_leveraged, body.is_inverse, body.crypto_exposure, body.active, `${body.source} (by ${u.email})`],
     );
-    await audit(pool, u.email, "asset.classification", req.params.id, body, req.ip);
+    const { totp: _totp, ...details } = body; // never persist the 2FA code (the audit log is readable by viewers)
+    await audit(pool, u.email, "asset.classification", req.params.id, details, req.ip);
     return { ok: true };
   });
 
@@ -202,7 +222,7 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
         totp: Totp,
       })
       .parse(req.body);
-    const u = requireMfa(req, body.totp);
+    const u = await requireMfa(pool, req, body.totp);
     const live = await maybeOne<{ id: string }>(pool, "SELECT id FROM portfolios WHERE kind = 'LIVE' LIMIT 1");
     try {
       const { totp: _t, ...policy } = body;
@@ -210,7 +230,7 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
       await audit(pool, u.email, "live.policy.sign", live!.id, { version: row.version, ...policy }, req.ip);
       return row;
     } catch (err) {
-      throw new HttpError(400, (err as Error).message);
+      throw badRequest(err);
     }
   });
 
@@ -226,7 +246,7 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
     const body = z
       .object({ to: z.enum(["DORMANT", "ELIGIBLE", "ARMED", "PILOT", "ACTIVE", "PAUSED"]), reason: z.string().min(3), totp: Totp, strategyVersionId: z.string().uuid().optional() })
       .parse(req.body);
-    const u = body.to === "DORMANT" || body.to === "PAUSED" ? requireOwner(req) : requireMfa(req, body.totp);
+    const u = body.to === "DORMANT" || body.to === "PAUSED" ? requireOwner(req) : await requireMfa(pool, req, body.totp);
     const live = await maybeOne<PortfolioRow>(pool, "SELECT * FROM portfolios WHERE kind = 'LIVE' LIMIT 1");
     try {
       if (body.to === "PAUSED") {
@@ -253,7 +273,7 @@ export function registerActionRoutes(app: FastifyInstance, pool: pg.Pool) {
       });
       return { ok: true, readiness };
     } catch (err) {
-      throw new HttpError(400, (err as Error).message);
+      throw badRequest(err);
     }
   });
 

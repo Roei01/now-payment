@@ -89,7 +89,7 @@ export function DecisionTrace({ id }: { id: string }) {
       <Card i={0}>
         <div className="card-head">
           <div className="grow">
-            <h3>{t(d.action)}</h3>
+            <h2>{t(d.action)}</h2>
             <div className="desc">
               {d.strategy_code ?? "—"} · גרסה {d.strategy_version ?? "—"} · מדיניות <span className="ltr">{d.policy_version}</span>
             </div>

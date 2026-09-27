@@ -9,18 +9,19 @@
   --border-strong: #cfd5df;
   --text: #0e1422;
   --text-2: #3d4657;
-  --muted: #6b7486;
-  --accent: #2a63d6;
+  --muted: #555e6f;
+  --accent: #2459c4;
   --accent-hover: #2255bd;
   --accent-soft: #e8efff;
   --on-accent: #ffffff;
-  --good: #0f7a4f;
+  --good: #0b6b45;
   --good-soft: #e3f5ec;
   --bad: #c2302f;
   --bad-soft: #fdeaea;
-  --warn: #9a5b00;
+  --on-bad: #ffffff;
+  --warn: #8a5100;
   --warn-soft: #fff3dc;
-  --info: #2a63d6;
+  --info: #2459c4;
   --info-soft: #e8efff;
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -57,6 +58,7 @@
     --good-soft: #10291f;
     --bad: #f47171;
     --bad-soft: #321718;
+    --on-bad: #230707;
     --warn: #f2b84b;
     --warn-soft: #2f2412;
     --info: #74a3ff;
@@ -457,7 +459,7 @@ p {
 .card-head > .grow {
   flex: 1 1 180px;
 }
-.card-head h3 {
+.card-head h2 {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.35;
@@ -513,9 +515,8 @@ a.card:active {
   font-size: 12px;
   color: var(--muted);
   font-weight: 550;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .kpi .value {
   margin-top: 2px;
@@ -695,7 +696,7 @@ a.card:active {
 .btn.danger {
   background: var(--bad);
   border-color: var(--bad);
-  color: #fff;
+  color: var(--on-bad);
 }
 .btn.danger-soft {
   background: var(--bad-soft);
